@@ -10,7 +10,7 @@
 - Translated the README and changelog into English; English is the documentation language for this project.
 - Added local simulation coverage for all 12 nonempty truncated status replies (1–12 bytes), snapshot preservation and recovery on the next complete reply; all passed. Five additional mid-bit interruption positions (50, 160, 165, 170 and 220 clock cycles into a bit) also pass snapshot preservation and subsequent recovery. Additional stuck-line cases remain pending.
 - Recorded the mandatory mutual exclusion of LLAPI and SNAC for future shared integration; no SNAC module is implemented yet.
-- Pending: modes, errors, additional stuck-line/reconnection cases, broader timeout coverage, optional transactions, resource measurements, Quartus validation and hardware testing.
+- Remaining validation: additional stuck-line/reconnection cases, resource measurements, Quartus and physical hardware.
 
 ### Receive-start recovery
 
@@ -19,3 +19,11 @@
 - Extended the timeout regression to reject release of only one input and a short simultaneous release glitch; complete recovery after stable release passes. No additional RTL change.
 
 - Repository transferred to MiSTer-LLAPI/BlisSTer-LLAPI-Enhanced; the original author attribution and MIT license are preserved.
+
+### Connected features and robustness
+
+- Connected GET_MODES to the normal status sequence, once per connection/controller type, with validity and unsupported/silent fallback. Analog-to-direction conversion uses only valid modes belonging to the same controller type.
+- Added an opt-in atomic request interface for pressure, mode queries, gated mode writes, and all declared rumble opcodes. Captures parameters and sends separate frames without interleaved polling; duration precedes level for rumble. One optional transaction per successful status prevents command starvation of inputs.
+- Added adapter error replies and transport timeout/rejection results. Write completion does not claim device acknowledgement or physical effect.
+- Guarded receive bounds and abort priority, polling subtraction/counter overflow, and full-width neutral disconnect state. Transaction deadlines use engineering limits requiring hardware validation.
+- Added wire-level feature regression configurations and English integration documentation. No firmware, core RBF, independent-motor or hardware-success claim.

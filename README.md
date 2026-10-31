@@ -11,6 +11,9 @@ Complete and improve the MiSTer driver while preserving compatibility with exist
 - Deterministic reset while ENABLE is low: counters, transmit/receive state and synchronization no longer depend on initialization forced by the testbench.
 - Atomic publication of controller type, buttons and all nine analog payload bytes after receiving a complete status packet. D-pad conversion uses data from the same packet.
 - Bounded receive-start wait: after 1 ms without a valid lead-in, the driver disconnects, clears buttons, centers axes and releases its outputs. It waits for both input lines to be released for the settling interval before resuming polling. The 1 ms limit is an engineering choice that still requires hardware validation.
+- Automatic GET_MODES after a valid connection/controller-type change, with explicit validity and fallback when unsupported or silent.
+- Optional atomic command interface for pressure, mode queries, opt-in mode writes and the declared rumble commands. Payloads cannot be interleaved with polling; [TRANSACTIONS.md](TRANSACTIONS.md) documents integration and completion/error semantics.
+- Bounded transaction waits, receive-index guard, abort priority, complete neutral values on disconnect and saturating/guarded polling calculations.
 - SystemVerilog portability adjustments: explicit procedural output declarations, removal of a trailing concatenation comma, and if/else selection of enum values.
 
 The implementation is in `rtl/llapi_enhanced.sv`. It retains Jamie Dickson's (Kitrinx) copyright notice and MIT license. Original references are preserved in `reference/`.
@@ -28,20 +31,21 @@ Run from this directory. The script creates and removes a temporary directory.
 1. `legacy_wire_tb.sv`: decodes commands on the wire, responds to poll/status requests, and checks the complete analog packet and transition to a digital controller. It explicitly models the legacy counters' power-up values.
 2. `enhanced_reset_tb.sv`: checks the same inputs without forcing internal counters; during the second response, it verifies that partial bytes do not change the previously published state. It checks the new state after the complete response. The runner also tests all 12 nonempty truncated packet lengths (1–12 bytes), verifies that the incomplete reply does not replace the published snapshot, and checks recovery on a subsequent complete reply.
 
-The reference test uses a temporary copy with three syntax normalizations for Icarus; the stored reference remains unchanged. Inherited warnings about nonblocking assignments in always_comb remain to be reviewed. Passing simulation does not establish Quartus timing closure or hardware operation.
+The reference test uses a temporary copy with three syntax normalizations for Icarus; the stored reference remains unchanged. The legacy reference still emits inherited always_comb warnings; the Enhanced output combinational block uses blocking assignments. Passing simulation does not establish Quartus timing closure or hardware operation.
 
 A dedicated `stuck_leadin_tb.sv` test covers a device holding latch and data low, timeout, neutral controls, no transmissions while blocked, rejection of one-line-only releases and short release glitches, and successful reception after a stable release. This does not establish recovery from every possible stuck-line condition.
 
 ## Next steps
 
-1. Test interrupted replies, disconnection/reconnection and protocol errors; verify receive index bounds.
-2. Query GET_MODES and recover when unsupported.
-3. Add bounded timeouts and protect polling-period calculations against subtraction underflow.
-4. Add an optional interface for complete transactions with payloads/replies and fair polling.
-5. Implement documented features, such as pressure and rumble parameters, with dedicated tests.
-6. Measure resource usage and polling times; integrate a pilot core and run Quartus/timing checks before hardware tests.
+1. Extend fault coverage for disconnect/reset during payload writes and electrical timing variation.
+2. Measure resource usage and polling times; integrate a pilot core and run Quartus/timing checks.
+3. Validate modes, pressure support and rumble effects on physical BlisSTer hardware with representative controllers.
 
-No resource or latency improvements have been measured yet. Independent motor control through current firmware is not promised. Persistent mode/mapping writes and undocumented features are outside the first phase.
+The command interface is opt-in; existing cores must explicitly integrate the new inputs/outputs to use pressure or rumble. Mode writes require an additional opt-in parameter. Neither firmware changes nor SNAC support are included.
+
+No resource or latency improvements have been measured yet. Independent motor control through current firmware is not promised. Persistent mapping/player writes and undocumented features are outside this implementation.
+
+`features_tb.sv` exercises automatic modes with a valid bitmap, all three documented errors and no reply, plus pressure, rumble/mode payloads, explicit command errors, timeout recovery, guarded sync timing and fair polling. Separate configurations verify that mode writes are rejected when disabled and that a 2 ms controller-poll busy interval is accepted.
 
 ## Reference documentation
 
