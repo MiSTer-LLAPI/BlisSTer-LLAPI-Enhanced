@@ -92,7 +92,11 @@
 // 6: autopause dis.
 // 7: d-pad only mode
 
-module LLAPI_Enhanced
+module LLAPI_Enhanced #(
+    parameter bit AUTO_MODES = 1,
+    parameter bit COMMAND_INTERFACE = 0,
+    parameter bit ALLOW_MODE_WRITES = 0
+)
 (
 	input         CLK_50M,
 	input         ENABLE,        // If 0, module will be disabled and pins will be set to Z
@@ -105,14 +109,23 @@ module LLAPI_Enhanced
 	output [7:0]  LLAPI_TYPE,     // Enumerated controller type, passed to core
 	output [7:0]  LLAPI_MODES,    // Modes that the bliss box may be in, passed to core
 	output [31:0] LLAPI_BUTTONS,  // Vector of buttons, 1 == pressed, passed to core
-	output [71:0] LLAPI_ANALOG    // Unsigned 8 bit vector of analog axis, passed to core
+	output [71:0] LLAPI_ANALOG,   // Unsigned 8 bit vector of analog axis, passed to core
+    input CMD_VALID,
+    input [7:0] CMD_OPCODE,
+    input [15:0] CMD_PAYLOAD, // low byte first: duration, then level for 1C
+    output CMD_READY,
+    output reg CMD_DONE,
+    output reg [7:0] CMD_ERROR, // 0=transport completed, E0=timeout, E1=rejected
+    output reg [103:0] CMD_REPLY,
+    output reg [3:0] CMD_REPLY_LENGTH,
+    output reg MODES_VALID
 );
 
 // Commands
 enum bit [7:0] {
 	LLAPI_POLL               = 8'h00, // Holds latch low until done
 	LLAPI_STATUS             = 8'h01, // Returns 13 bytes, see above
-	LLAPI_PRESSURE_STATUS    = 8'h02, // Returns ?? bytes
+	LLAPI_PRESSURE_STATUS    = 8'h02, // Returns 13 bytes: player ID then 12 pressures
 	LLAPI_SET_MODES          = 8'h20, // Requires 1 byte payload
 	LLAPI_GET_MODES          = 8'h21, // Returns bit field of active modes, 1 byte. see above
 	// Rumble
@@ -122,7 +135,7 @@ enum bit [7:0] {
 	LLAPI_RUMBLE_SINE_END               = 8'h18,
 	LLAPI_RUMBLE_CONST_JOLT             = 8'h1A,
 	LLAPI_RUMBLE_SINE_JOLT              = 8'h1B,
-	LLAPI_RUMBLE_PARMS                  = 8'h1C //followed by 2 bytes of data containing the parms (rumbleLevel and then rumbleLoop)
+	LLAPI_RUMBLE_PARMS                  = 8'h1C //followed by 2 bytes of data containing the parms (duration and then level)
 } commands;
 
 // Errors
@@ -144,14 +157,16 @@ enum bit [20:0] {
 	TIME_BUFFER = 21'd9500    // 3 scanlines of wiggle room
 } time_periods;
 
-typedef enum bit [2:0] {
+typedef enum bit [3:0] {
 	READ_IDLE,
 	READ_POLL,
 	WRITE_STATUS,
 	READ_STATUS,
 	WRITE_SETUP,
 	WRITE_MODES,
-	READ_MODES
+	READ_MODES,
+    READ_COMMAND,
+    WRITE_PAYLOAD
 } execution_stage;
 
 typedef enum bit [3:0] {
@@ -177,6 +192,18 @@ logic [3:0]   read_byte;
 logic [7:0]   read_buffer[13];
 logic [3:0]   read_length;
 
+logic modes_attempted, command_busy, command_slot;
+logic [1:0] payload_remaining;
+logic [7:0] active_opcode;
+logic [20:0] transaction_timer;
+function automatic valid_command(input [7:0] op);
+    valid_command = op == 8'h02 || op == 8'h21 || op == 8'h11 || op == 8'h12 ||
+        op == 8'h14 || op == 8'h18 || op == 8'h1a || op == 8'h1b || op == 8'h1c ||
+        (ALLOW_MODE_WRITES && op == 8'h20);
+endfunction
+function automatic protocol_error(input [7:0] v);
+    protocol_error = v == 8'hf1 || v == 8'hfe || v == 8'hff;
+endfunction
 logic [31:0] pending_buttons;
 logic [71:0] pending_analog;
 logic [7:0] pending_type;
@@ -197,6 +224,12 @@ logic old_sync, new_sync, old_data;
 execution_stage stage = READ_IDLE;
 execution_state state = STATE_IDLE;
 
+wire auxiliary = command_busy || stage == READ_MODES;
+wire poll_due = sync_counter >= ((enable && poll_time > TIME_BUFFER &&
+    poll_offset < poll_time - TIME_BUFFER) ? poll_time - poll_offset : poll_time);
+assign CMD_READY = COMMAND_INTERFACE && ENABLE && enable && command_slot &&
+    !command_busy && stage == READ_IDLE && state == STATE_IDLE &&
+    !is_latched && data_in && !poll_due && cycle > TIME_WAIT;
 assign LLAPI_TYPE = lljs_type;
 assign LLAPI_BUTTONS = lljs_buttons;
 assign LLAPI_ANALOG = lljs_analog;
@@ -205,16 +238,20 @@ assign LLAPI_EN = enable;
 
 always_comb begin
 	if (latch) begin
-		IO_LATCH_OUT <= 1'b0;
-		IO_DATA_OUT <= data_out;
+		IO_LATCH_OUT = 1'b0;
+		IO_DATA_OUT = data_out;
 	end else begin
-		IO_LATCH_OUT <= 1'b1;
-		IO_DATA_OUT <= 1'b1;
+		IO_LATCH_OUT = 1'b1;
+		IO_DATA_OUT = 1'b1;
 	end
 end
 
 always_ff @(posedge CLK_50M) begin
 	if (ENABLE) begin
+    CMD_DONE <= 0;
+    if (stage != READ_IDLE || state != STATE_IDLE) begin
+        if (transaction_timer != 21'h1fffff) transaction_timer <= transaction_timer + 1'b1;
+    end else transaction_timer <= 0;
 	old_sync <= new_sync;
 	new_sync <= LLAPI_SYNC;
 	cycle <= cycle + 1'b1;
@@ -227,15 +264,15 @@ always_ff @(posedge CLK_50M) begin
 
 	if (~old_sync && new_sync && sync_counter > poll_offset_latch) begin
 		sync_counter <= 0;
-		poll_time <= poll_counter - 21'd9500; // about 3 scanlines of wobble room
+		poll_time <= poll_counter > (TIME_BUFFER + TIME_WAIT) ? poll_counter - TIME_BUFFER : TIME_POLL; // about 3 scanlines of wobble room
 		poll_counter <= 0;
 	end else begin
-		sync_counter <= sync_counter + 1'b1;
-		poll_counter <= poll_counter + 1'b1;
+		if (sync_counter != 21'h1fffff) sync_counter <= sync_counter + 1'b1;
+		if (poll_counter != 21'h1fffff) poll_counter <= poll_counter + 1'b1;
 	end
 
 	if (stage == READ_POLL || stage == READ_STATUS)
-		poll_offset <= poll_offset + 1'b1;
+		if (poll_offset != 21'h1fffff) poll_offset <= poll_offset + 1'b1;
 
 	case (state)
 		STATE_IDLE: begin
@@ -246,7 +283,22 @@ always_ff @(posedge CLK_50M) begin
 				read_byte <= 0;
                 packet_complete <= 0;
 				state <= STATE_READ_START;
-			end else if (stage == WRITE_STATUS) begin // We just got a poll result
+			end else if (stage == WRITE_PAYLOAD) begin
+                if (cycle > TIME_WAIT && data_in) begin
+                    cycle <= 0; state <= STATE_WRITE_START; stage <= READ_COMMAND;
+                end
+            end else if (CMD_READY && CMD_VALID) begin
+                command_slot <= 0; CMD_ERROR <= 0; CMD_REPLY <= 0; CMD_REPLY_LENGTH <= 0;
+                if (!valid_command(CMD_OPCODE)) begin CMD_DONE <= 1; CMD_ERROR <= 8'he1; end
+                else begin
+                    command_busy <= 1; active_opcode <= CMD_OPCODE;
+                    write_buffer <= {8'd0, CMD_PAYLOAD, CMD_OPCODE};
+                    payload_remaining <= CMD_OPCODE == 8'h1c ? 2 : (CMD_OPCODE == 8'h20 ? 1 : 0);
+                    read_length <= CMD_OPCODE == 8'h02 ? 13 : (CMD_OPCODE == 8'h21 ? 1 : 0);
+                    stage <= READ_COMMAND; state <= STATE_WRITE_START;
+                    cycle <= 0; transaction_timer <= 0;
+                end
+            end else if (stage == WRITE_STATUS) begin // We just got a poll result
 				if (cycle > TIME_WAIT) begin
 					cycle <= 0;
 					state <= STATE_WRITE_START;
@@ -262,8 +314,7 @@ always_ff @(posedge CLK_50M) begin
 					state <= STATE_WRITE_START;
 					write_buffer <= {24'd0, LLAPI_GET_MODES};
 				end
-			end else if (sync_counter >= (((poll_offset < (poll_time - TIME_BUFFER)) && enable) ?
-				(poll_time - poll_offset) : poll_time)) begin // Trigger timed device poll. Offset can not be > half the poll time.
+			end else if (poll_due) begin // Trigger timed device poll. Offset can not be > half the poll time.
 				count <= count + 1'b1;
 				if (count > TIME_WAIT) begin
 					if (stage != READ_IDLE) begin // IO timeout, device disconnect/defunct
@@ -273,7 +324,8 @@ always_ff @(posedge CLK_50M) begin
 						poll_offset_latch <= 21'd350000;
 						lljs_buttons <= 24'h0;
 						lljs_type <= 8'h0;
-						lljs_analog <= 48'h808080808080;
+						lljs_analog <= 72'h080000808080808080;
+                        lljs_modes <= 0; MODES_VALID <= 0; modes_attempted <= 0;
 					end
 					poll_offset <= 0;
 					sync_counter <= 0;
@@ -281,6 +333,7 @@ always_ff @(posedge CLK_50M) begin
 					count <= 0;
 					read_length <= 0;
 					state <= STATE_WRITE_START;
+                    transaction_timer <= 0; payload_remaining <= 0;
 					stage <= READ_POLL;
 					write_buffer <= {24'd0, LLAPI_POLL};
 				end
@@ -322,12 +375,19 @@ always_ff @(posedge CLK_50M) begin
 				latch <= 1'b0; // Release
 			end else if (cycle >= (TIME_SYNC_H + TIME_SYNC_L + TIME_SETTLE)) begin
 				state <= STATE_IDLE;
-				cycle <= 0;
-			end
-		end
+                if (command_busy && payload_remaining != 0) begin
+                    payload_remaining <= payload_remaining - 1'b1;
+                    stage <= WRITE_PAYLOAD;
+                end else if (command_busy && read_length == 0) begin
+                    command_busy <= 0; CMD_DONE <= 1; stage <= READ_IDLE;
+                    if (active_opcode == 8'h20) begin modes_attempted <= 0; MODES_VALID <= 0; lljs_modes <= 0; end
+                end
+                cycle <= 0;
+            end
+        end
 
-		STATE_READ_START: begin
-            if (cycle >= RECEIVE_START_TIMEOUT) begin
+        STATE_READ_START: begin
+            if (cycle >= ((stage == READ_POLL) ? TIME_POLL : RECEIVE_START_TIMEOUT)) begin
                 // Discard this transaction and wait for both input lines to release.
                 // Never repeatedly transmit into a device holding the bus low.
                 state <= STATE_WAIT_RELEASE;
@@ -337,11 +397,13 @@ always_ff @(posedge CLK_50M) begin
                 latch <= 0; data_out <= 1;
                 enable <= 0;
                 lljs_type <= 0; lljs_modes <= 0; lljs_buttons <= 0;
+                modes_attempted <= 0; MODES_VALID <= 0;
                 lljs_analog <= 72'h080000808080808080;
             end else if (cycle >= TIME_SETTLE && ~is_latched) begin // Just a busy wait/poll/blip
 				cycle <= 0;
-				if (stage == READ_POLL) // If expecting a busy reply from poll, advance
-					stage <= WRITE_STATUS;
+				if (stage == READ_POLL) begin // Poll processing gets its own budget.
+                    stage <= WRITE_STATUS; transaction_timer <= 0;
+                end
 				state <= STATE_IDLE;
 			end else if (count >= 'd10) begin // Allows for latch to be seen if both are released together
 				cycle <= 'd10;
@@ -377,7 +439,9 @@ always_ff @(posedge CLK_50M) begin
 			if (~is_latched) begin // Accounts from random timing errors or unexpected events
 				cycle <= 0;
 				state <= STATE_IDLE;
-			end if (cycle == (TIME_BIT_H + (TIME_BIT_R >> 1))) begin // latch in the middle of the data window
+			end else if (read_byte >= read_length || read_byte >= 13) begin
+                state <= STATE_READ_END; cycle <= 0;
+            end else if (cycle == (TIME_BIT_H + (TIME_BIT_R >> 1))) begin // latch in the middle of the data window
 				read_buffer[read_byte][read_bit] <= ~data_in;
 				read_bit <= read_bit + 1'b1;
 			end else if (cycle >= TIME_BIT_H + TIME_BIT_R) begin
@@ -386,8 +450,6 @@ always_ff @(posedge CLK_50M) begin
 					if (read_byte == 0) begin
 						if (stage == READ_STATUS) begin
 							pending_type <= read_buffer[0];
-						end else if (stage == READ_MODES) begin
-							lljs_modes <= read_buffer[0];
 						end
 					end else if (read_byte == 'd12 && stage == READ_STATUS) begin
                         packet_complete <= 1;
@@ -417,8 +479,9 @@ always_ff @(posedge CLK_50M) begin
 							read_buffer[4]
 						};
 					end
-					poll_offset_latch <= poll_offset + TIME_BUFFER;
+					poll_offset_latch <= poll_offset < (21'h1fffff - TIME_BUFFER) ? poll_offset + TIME_BUFFER : 21'h1fffff;
 					read_byte <= read_byte + 1'd1;
+                    if (read_byte == 0 && stage != READ_MODES && protocol_error(read_buffer[0])) read_length <= 1;
 					state <= STATE_READ_WAIT;
 				end
 			end
@@ -440,11 +503,12 @@ always_ff @(posedge CLK_50M) begin
 			// latch data to correct registers based on stage
 			if (cycle >= TIME_WAIT) begin // bliss box holds the line low for about 3us after reply
                 // Publish type, buttons and all axes together after a complete packet.
-                if (stage == READ_STATUS && packet_complete) begin
+                if (stage == READ_STATUS && packet_complete && pending_type != 0 && !protocol_error(pending_type)) begin
+                    command_slot <= 1;
                     lljs_type <= pending_type;
                     lljs_buttons <= pending_buttons;
                     lljs_analog <= pending_analog;
-                    if (lljs_modes[7]) begin
+                    if (MODES_VALID && pending_type == lljs_type && lljs_modes[7]) begin
                         lljs_buttons[27] <= pending_buttons[27] | (pending_analog[15:8] < 50);
                         lljs_buttons[26] <= pending_buttons[26] | (pending_analog[15:8] > 200);
                         lljs_buttons[25] <= pending_buttons[25] | (pending_analog[7:0] < 50);
@@ -453,8 +517,29 @@ always_ff @(posedge CLK_50M) begin
                 end
                 packet_complete <= 0;
                 stage <= READ_IDLE;
-				cycle <= 0;
-				state <= STATE_IDLE;
+                if (stage == READ_STATUS && packet_complete && pending_type != 0 && !protocol_error(pending_type) && AUTO_MODES && (!modes_attempted || pending_type != lljs_type)) begin
+                    stage <= WRITE_MODES; modes_attempted <= 1;
+                    lljs_modes <= 0; MODES_VALID <= 0; transaction_timer <= 0;
+                end
+                if (stage == READ_STATUS && ((read_byte == 1 && protocol_error(read_buffer[0])) || (packet_complete && pending_type == 0))) begin
+                    enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
+                    lljs_analog <= 72'h080000808080808080;
+                    lljs_modes <= 0; MODES_VALID <= 0; modes_attempted <= 0;
+                end
+                if ((stage == READ_MODES || (command_busy && active_opcode == 8'h21)) && read_byte == 1) begin
+                    if (!protocol_error(read_buffer[0])) begin
+                        lljs_modes <= read_buffer[0]; MODES_VALID <= 1;
+                    end else begin lljs_modes <= 0; MODES_VALID <= 0; end
+                end
+                if (command_busy) begin
+                    CMD_DONE <= 1; command_busy <= 0;
+                    CMD_REPLY_LENGTH <= read_byte;
+                    for (integer n=0; n<13; n=n+1)
+                        if (n < read_byte) CMD_REPLY[n*8 +: 8] <= read_buffer[n];
+                    if (read_byte == 1 && protocol_error(read_buffer[0])) CMD_ERROR <= read_buffer[0];
+                end
+                cycle <= 0;
+                state <= STATE_IDLE;
 			end
 		end
 
@@ -464,9 +549,23 @@ always_ff @(posedge CLK_50M) begin
 			stage <= READ_IDLE;
 			state <= STATE_IDLE;
 		end
-	endcase
-	end else begin
+    endcase
+    if (transaction_timer >= ((stage == READ_POLL) ? TIME_POLL : RECEIVE_START_TIMEOUT) && state != STATE_WAIT_RELEASE) begin
+        if (is_latched || !data_in) state <= STATE_WAIT_RELEASE; else state <= STATE_IDLE;
+        stage <= READ_IDLE; cycle <= 0; count <= 0; transaction_timer <= 0;
+        latch <= 0; data_out <= 1; packet_complete <= 0; payload_remaining <= 0;
+        if (command_busy) begin CMD_DONE <= 1; CMD_ERROR <= 8'he0; command_busy <= 0; end
+        if (!auxiliary || is_latched || !data_in) begin
+            enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
+            lljs_analog <= 72'h080000808080808080;
+            lljs_modes <= 0; MODES_VALID <= 0; modes_attempted <= 0;
+        end
+    end
+    end else begin
         // ENABLE low resets transaction/synchronization state deterministically.
+        modes_attempted <= 0; MODES_VALID <= 0; command_busy <= 0; command_slot <= 0;
+        payload_remaining <= 0; active_opcode <= 0; transaction_timer <= 0;
+        CMD_DONE <= 0; CMD_ERROR <= 0; CMD_REPLY <= 0; CMD_REPLY_LENGTH <= 0;
         pending_type <= 0; pending_buttons <= 0; pending_analog <= 0; packet_complete <= 0;
         cycle <= 0; count <= 0; poll_offset <= 0; poll_counter <= 0;
         poll_offset_latch <= 0; sync_counter <= 0; poll_time <= TIME_POLL;
