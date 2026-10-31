@@ -1,56 +1,56 @@
 # BlisSTer LLAPI Enhanced
 
-Projeto de melhoria da integração LLAPI entre cores MiSTer e BlisSTer. O protocolo LLAPI não é exclusivo do BlisSTer; este projeto concentra-se nesse hardware e nas suas duas portas LLAPI. Estado: desenvolvimento experimental, sem integração publicada ou validação física.
+Improving LLAPI integration between MiSTer cores and BlisSTer. The LLAPI protocol is not exclusive to BlisSTer; this project focuses on that hardware and its two LLAPI ports. Status: experimental development, with no published core integration or hardware validation yet.
 
-## Objetivo e prioridade
+## Goal and priorities
 
-Completar e melhorar o driver MiSTer mantendo compatibilidade com o firmware BlisSTer existente e as suas duas portas LLAPI. Só depois avaliar alterações ao firmware e eventual código Gamer-Pro Advanced, conforme disponibilidade, licença e compatibilidade.
+Complete and improve the MiSTer driver while preserving compatibility with existing BlisSTer firmware and its two LLAPI ports. Firmware changes and potential reuse of Gamer-Pro Advanced code will only be considered afterward, subject to availability, licensing and compatibility.
 
-## Implementado e verificado em simulação
+## Implemented and verified in simulation
 
-- Reset determinístico quando ENABLE está desligado: contadores, estado de transmissão/receção e sincronização deixam de depender de inicialização forçada pelo teste.
-- Publicação conjunta do tipo de comando, botões e nove bytes analógicos após receção de um pacote de estado completo. A conversão D-pad usa os dados desse mesmo pacote.
-- Ajustes de portabilidade SystemVerilog: declaração explícita das saídas procedurais, remoção de vírgula final numa concatenação e seleção de enum por if/else.
+- Deterministic reset while ENABLE is low: counters, transmit/receive state and synchronization no longer depend on initialization forced by the testbench.
+- Atomic publication of controller type, buttons and all nine analog payload bytes after receiving a complete status packet. D-pad conversion uses data from the same packet.
+- SystemVerilog portability adjustments: explicit procedural output declarations, removal of a trailing concatenation comma, and if/else selection of enum values.
 
-A implementação está em `rtl/llapi_enhanced.sv`. Mantém o aviso de copyright e licença MIT de Jamie Dickson (Kitrinx). As referências originais em `reference/` estão preservadas.
+The implementation is in `rtl/llapi_enhanced.sv`. It retains Jamie Dickson's (Kitrinx) copyright notice and MIT license. Original references are preserved in `reference/`.
 
-## Testes reproduzíveis
+## Reproducible tests
 
-Requisitos: Python 3 e Icarus Verilog com suporte SystemVerilog.
+Requirements: Python 3 and Icarus Verilog with SystemVerilog support.
 
 ```sh
 bash tests/run.sh
 ```
 
-Executar a partir desta pasta. O script cria e elimina um diretório temporário.
+Run from this directory. The script creates and removes a temporary directory.
 
-1. `legacy_wire_tb.sv`: descodifica comandos nos fios, responde ao poll/status e verifica o pacote analógico completo e a transição para comando digital. Modela explicitamente os valores de arranque dos contadores antigos.
-2. `enhanced_reset_tb.sv`: verifica as mesmas entradas sem forçar contadores internos; durante a segunda resposta, confirma que os bytes parciais não alteram o estado anterior publicado. Verifica o estado novo após a resposta completa.
+1. `legacy_wire_tb.sv`: decodes commands on the wire, responds to poll/status requests, and checks the complete analog packet and transition to a digital controller. It explicitly models the legacy counters' power-up values.
+2. `enhanced_reset_tb.sv`: checks the same inputs without forcing internal counters; during the second response, it verifies that partial bytes do not change the previously published state. It checks the new state after the complete response.
 
-O teste da referência usa uma cópia temporária com três normalizações de sintaxe para Icarus; não altera a referência guardada. Existem avisos herdados de atribuições não bloqueantes em always_comb, ainda por rever. PASS em simulação não é aprovação Quartus nem prova de funcionamento físico.
+The reference test uses a temporary copy with three syntax normalizations for Icarus; the stored reference remains unchanged. Inherited warnings about nonblocking assignments in always_comb remain to be reviewed. Passing simulation does not establish Quartus timing closure or hardware operation.
 
-## Próximos passos
+## Next steps
 
-1. Testes de resposta interrompida, desligar/religar e erros de protocolo; verificar limites dos índices de receção.
-2. Consulta GET_MODES e recuperação quando não suportada.
-3. Timeouts limitados e proteção contra subtração inválida no período de polling.
-4. Interface opcional de transações completas com payload/resposta e polling justo.
-5. Funcionalidades documentadas, como pressão e parâmetros de rumble, com testes próprios.
-6. Medir recursos e tempos de polling; integrar piloto e executar Quartus/timing antes de testes físicos.
+1. Test interrupted replies, disconnection/reconnection and protocol errors; verify receive index bounds.
+2. Query GET_MODES and recover when unsupported.
+3. Add bounded timeouts and protect polling-period calculations against subtraction underflow.
+4. Add an optional interface for complete transactions with payloads/replies and fair polling.
+5. Implement documented features, such as pressure and rumble parameters, with dedicated tests.
+6. Measure resource usage and polling times; integrate a pilot core and run Quartus/timing checks before hardware tests.
 
-Não há ainda ganhos de recursos ou latência medidos. Não se promete controlo independente dos motores através do firmware atual. Escritas persistentes de modos/mapeamentos e funcionalidades não documentadas ficam fora da primeira fase.
+No resource or latency improvements have been measured yet. Independent motor control through current firmware is not promised. Persistent mode/mapping writes and undocumented features are outside the first phase.
 
-## Documentação de referência
+## Reference documentation
 
-- [Protocolo Bliss-Box](https://bliss-box.com/pages/integration)
-- [Downloads e firmware Bliss-Box](https://bliss-box.com/pages/downloads)
-- [Exemplo público de firmware LLAPI](https://github.com/ulao/Bliss-Box-LLAPI), referência auditada abdb246195d5d089b6fd968ebb98aa86ce3c6a70. É parcial e não inclui o backend dos motores.
-- Referência de driver preservada em `reference/SNES_MiSTer-a922e326-llapi.sv`.
+- [Bliss-Box protocol](https://bliss-box.com/pages/integration)
+- [Bliss-Box downloads and firmware](https://bliss-box.com/pages/downloads)
+- [Public LLAPI firmware example](https://github.com/ulao/Bliss-Box-LLAPI), audited reference abdb246195d5d089b6fd968ebb98aa86ce3c6a70. This is partial and does not include the motor backend.
+- Preserved driver reference: `reference/SNES_MiSTer-a922e326-llapi.sv`.
 
-## Publicação
+## Distribution
 
-Cores LLAPI Enhanced começam em `_LLAPI/_Experimental`, com identificação Enhanced e requisitos de hardware/RAM. O nome não repete Experimental. As versões finais 1943/1944 usam o LLAPI antigo, foram aprovadas pelo utilizador e permanecem finais.
+LLAPI Enhanced cores initially belong in `_LLAPI/_Experimental`, with Enhanced identification and hardware/RAM requirements in their names. Filenames do not repeat Experimental. The final 1943/1944 releases use the legacy LLAPI implementation, have been approved through user testing, and remain final.
 
-## Acompanhamento
+## Progress tracking
 
-O progresso, os testes e as limitações são registados em [CHANGELOG.md](CHANGELOG.md).
+Progress, tests and limitations are recorded in [CHANGELOG.md](CHANGELOG.md). Project documentation is maintained in English.
