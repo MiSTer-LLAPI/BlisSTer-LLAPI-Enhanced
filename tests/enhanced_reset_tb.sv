@@ -5,7 +5,7 @@ module enhanced_reset_tb;
  reg clk=0, enabled=0, latch_in=1, data_in=1;
  wire latch_out,data_out,active;wire [7:0] kind,modes;wire [31:0] buttons;wire [71:0] analog_data;
  always #10 clk=~clk;
- LLAPI_Enhanced dut(.CLK_50M(clk),.ENABLE(enabled),.LLAPI_SYNC(1'b0),
+ LLAPI_Enhanced #(.AUTO_MODES(0)) dut(.CLK_50M(clk),.ENABLE(enabled),.LLAPI_SYNC(1'b0),
  .IO_LATCH_IN(latch_in),.IO_DATA_IN(data_in),.IO_LATCH_OUT(latch_out),.IO_DATA_OUT(data_out),
  .LLAPI_EN(active),.LLAPI_TYPE(kind),.LLAPI_MODES(modes),.LLAPI_BUTTONS(buttons),.LLAPI_ANALOG(analog_data));
  reg [7:0] packet[0:12]; integer i,b,polls=0,statuses=0,jolts=0,stops=0;reg [7:0] command; reg truncated_done=0;

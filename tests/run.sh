@@ -32,3 +32,16 @@ done
 
 iverilog -g2012 -s stuck_leadin_tb -o "$build/stuck" rtl/llapi_enhanced.sv tests/stuck_leadin_tb.sv
 vvp "$build/stuck"
+
+# Exercise default automatic modes, unsupported replies and silent adapters.
+for modes in 128 241 254 255 -1; do
+  iverilog -g2012 -s features_tb -Pfeatures_tb.MODE_REPLY="$modes" -o "$build/features" rtl/llapi_enhanced.sv tests/features_tb.sv
+  vvp "$build/features"
+done
+
+iverilog -g2012 -s features_tb -Pfeatures_tb.MODE_WRITES=0 -o "$build/features" rtl/llapi_enhanced.sv tests/features_tb.sv
+vvp "$build/features"
+
+# A slow controller poll must not be mistaken for a stuck receive lead-in.
+iverilog -g2012 -s features_tb -Pfeatures_tb.POLL_BUSY_TICKS=100000 -o "$build/features" rtl/llapi_enhanced.sv tests/features_tb.sv
+vvp "$build/features"
