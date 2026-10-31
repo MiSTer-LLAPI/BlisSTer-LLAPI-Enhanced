@@ -18,5 +18,17 @@ PYCODE
 iverilog -g2012 -s legacy_wire_tb -o "$build/legacy" "$build/legacy.sv" tests/legacy_wire_tb.sv
 vvp "$build/legacy"
 
-iverilog -g2012 -s enhanced_reset_tb -o "$build/enhanced" rtl/llapi_enhanced.sv tests/enhanced_reset_tb.sv
-vvp "$build/enhanced"
+# Exercise every nonempty truncated status-packet length, followed by recovery.
+for truncated_bytes in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  iverilog -g2012 -s enhanced_reset_tb -Penhanced_reset_tb.TRUNCATE_BYTES="$truncated_bytes" -o "$build/enhanced" rtl/llapi_enhanced.sv tests/enhanced_reset_tb.sv
+  vvp "$build/enhanced"
+done
+
+# Interrupt a bit before, near, and after the receiver's sampling window.
+for abort_ticks in 50 160 165 170 220; do
+  iverilog -g2012 -s enhanced_reset_tb -Penhanced_reset_tb.ABORT_TICKS="$abort_ticks" -o "$build/enhanced" rtl/llapi_enhanced.sv tests/enhanced_reset_tb.sv
+  vvp "$build/enhanced"
+done
+
+iverilog -g2012 -s stuck_leadin_tb -o "$build/stuck" rtl/llapi_enhanced.sv tests/stuck_leadin_tb.sv
+vvp "$build/stuck"

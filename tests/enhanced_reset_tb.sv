@@ -1,18 +1,27 @@
 `timescale 1ns/1ps
 module enhanced_reset_tb;
+ parameter integer TRUNCATE_BYTES = 6;
+ parameter integer ABORT_TICKS = 0;
  reg clk=0, enabled=0, latch_in=1, data_in=1;
  wire latch_out,data_out,active;wire [7:0] kind,modes;wire [31:0] buttons;wire [71:0] analog_data;
  always #10 clk=~clk;
  LLAPI_Enhanced dut(.CLK_50M(clk),.ENABLE(enabled),.LLAPI_SYNC(1'b0),
  .IO_LATCH_IN(latch_in),.IO_DATA_IN(data_in),.IO_LATCH_OUT(latch_out),.IO_DATA_OUT(data_out),
  .LLAPI_EN(active),.LLAPI_TYPE(kind),.LLAPI_MODES(modes),.LLAPI_BUTTONS(buttons),.LLAPI_ANALOG(analog_data));
- reg [7:0] packet[0:12]; integer i,b,polls=0,statuses=0,jolts=0,stops=0;reg [7:0] command;
+ reg [7:0] packet[0:12]; integer i,b,polls=0,statuses=0,jolts=0,stops=0;reg [7:0] command; reg truncated_done=0;
  task ticks(input integer n);begin repeat(n)@(negedge clk);end endtask
  task status_reply;
- begin
+ begin : reply_body
   latch_in=0;data_in=1;ticks(100);
-  for(i=0;i<13;i=i+1)begin
+  for(i=0;i<((statuses==3)?TRUNCATE_BYTES:13);i=i+1)begin
    for(b=0;b<8;b=b+1)begin
+    if(statuses==3 && ABORT_TICKS>0 && i==2 && b==3)begin
+     data_in=1;
+     if(ABORT_TICKS<=109) ticks(ABORT_TICKS);
+     else begin ticks(109);data_in=~packet[i][b];ticks(ABORT_TICKS-109);end
+     latch_in=1;data_in=1;truncated_done=1;
+     disable reply_body;
+    end
     data_in=1;ticks(109);data_in=~packet[i][b];ticks(115);
    end
    data_in=1;ticks(49);data_in=0;ticks(50);
@@ -20,6 +29,7 @@ module enhanced_reset_tb;
     $fatal(1,"partially received packet leaked at byte %0d",i);
   end
   latch_in=1;data_in=1;
+  if(statuses==3) truncated_done=1;
  end
  endtask
  // Adapter decodes the real output wire. No internal connection flag is forced.
@@ -46,7 +56,14 @@ module enhanced_reset_tb;
   packet[0]=65;packet[1]=8'h02;packet[12]=8'h08;
   wait(statuses==2);wait(dut.stage==dut.READ_IDLE);ticks(10);
   if(kind!==65 || buttons!==32'h00244202)$fatal(1,"digital report not preserved");
-  $display("PASS Enhanced deterministic reset, physical-wire analog/digital reception and coherent snapshot during controller transition");$finish;
+  packet[0]=11;packet[1]=8'h81;packet[12]=8'h02;
+  wait(truncated_done);ticks(1000);
+  if(kind!==65 || buttons!==32'h00244202 || analog_data!==72'h08000080c24180e020)
+   $fatal(1,"truncated response changed published snapshot");
+  wait(statuses==4);wait(dut.stage==dut.READ_IDLE);ticks(10);
+  if(!active || kind!==11 || buttons!==32'h01244281 || analog_data!==72'h02000080c24180e020)
+   $fatal(1,"did not recover after truncated reply");
+  $display("PASS Enhanced deterministic reset, physical-wire analog/digital reception and coherent snapshot during controller transition, truncated reply rejection and subsequent recovery");$finish;
  end
- initial begin #30000000;$fatal(1,"input protocol timeout state=%d stage=%d cycle=%d sync=%d active=%b",dut.state,dut.stage,dut.cycle,dut.sync_counter,active);end
+ initial begin #60000000;$fatal(1,"input protocol timeout state=%d stage=%d cycle=%d sync=%d active=%b",dut.state,dut.stage,dut.cycle,dut.sync_counter,active);end
 endmodule
