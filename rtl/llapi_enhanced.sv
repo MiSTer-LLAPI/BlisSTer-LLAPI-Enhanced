@@ -162,8 +162,12 @@ typedef enum bit [3:0] {
 	STATE_READ_START,
 	STATE_READ_WAIT,
 	STATE_READ,
-	STATE_READ_END
+	STATE_READ_END,
+    STATE_WAIT_RELEASE
 } execution_state;
+
+// Conservative receive-start limit: 1 ms at 50 MHz; requires hardware validation.
+localparam [20:0] RECEIVE_START_TIMEOUT = 21'd50000;
 
 logic [20:0]  cycle, count, poll_offset, poll_counter, poll_offset_latch, sync_counter;
 logic [31:0]  write_buffer;
@@ -323,7 +327,18 @@ always_ff @(posedge CLK_50M) begin
 		end
 
 		STATE_READ_START: begin
-			if (cycle >= TIME_SETTLE && ~is_latched) begin // Just a busy wait/poll/blip
+            if (cycle >= RECEIVE_START_TIMEOUT) begin
+                // Discard this transaction and wait for both input lines to release.
+                // Never repeatedly transmit into a device holding the bus low.
+                state <= STATE_WAIT_RELEASE;
+                stage <= READ_IDLE;
+                cycle <= 0; count <= 0;
+                packet_complete <= 0;
+                latch <= 0; data_out <= 1;
+                enable <= 0;
+                lljs_type <= 0; lljs_modes <= 0; lljs_buttons <= 0;
+                lljs_analog <= 72'h080000808080808080;
+            end else if (cycle >= TIME_SETTLE && ~is_latched) begin // Just a busy wait/poll/blip
 				cycle <= 0;
 				if (stage == READ_POLL) // If expecting a busy reply from poll, advance
 					stage <= WRITE_STATUS;
@@ -336,6 +351,18 @@ always_ff @(posedge CLK_50M) begin
 				count <= count + 1'b1;
 			end
 		end
+
+        STATE_WAIT_RELEASE: begin
+            latch <= 0; data_out <= 1;
+            if (is_latched || !data_in) cycle <= 0;
+            else if (cycle >= TIME_SETTLE) begin
+                state <= STATE_IDLE; stage <= READ_IDLE;
+                cycle <= 0; count <= 0;
+                poll_offset <= 0; poll_offset_latch <= 0;
+                poll_time <= TIME_POLL;
+                sync_counter <= TIME_POLL; poll_counter <= 0;
+            end
+        end
 
 		STATE_READ_WAIT: begin // the space between the bytes
 			if (cycle > (TIME_SYNC_H + TIME_SYNC_L + 'd5) ||
