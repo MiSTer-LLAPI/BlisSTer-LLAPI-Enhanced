@@ -65,7 +65,7 @@ A dedicated `stuck_leadin_tb.sv` test covers a device holding latch and data low
 
 ## Next steps
 
-Current priority: complete and validate LLAPI Enhanced first, then use I/O Tester as the first hardware test core. MT32-Pi is deferred; SNAC is optional follow-up work.
+Current priority: validate LLAPI Enhanced and integrate 1942 as the first game pilot, including exclusive SNAC modes based on the final 1943/1944 integrations. I/O Tester development and other core work are paused. N64 is a later step; MT32-Pi remains deferred.
 
 1. Extend fault coverage for disconnect/reset during payload writes and electrical timing variation.
 2. Measure resource usage and polling times; integrate a pilot core and run Quartus/timing checks.
