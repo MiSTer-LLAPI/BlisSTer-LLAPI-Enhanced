@@ -2,7 +2,7 @@
 
 Improving LLAPI integration between MiSTer cores and BlisSTer. The LLAPI protocol is not exclusive to BlisSTer; this project focuses on that hardware and its two LLAPI ports. Status: experimental development, with no published core integration or hardware validation yet.
 
-## What has improved, in plain English
+## What has improved
 
 Enhanced improves the communication between MiSTer cores and BlisSTer:
 
