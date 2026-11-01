@@ -2,6 +2,34 @@
 
 Improving LLAPI integration between MiSTer cores and BlisSTer. The LLAPI protocol is not exclusive to BlisSTer; this project focuses on that hardware and its two LLAPI ports. Status: experimental development, with no published core integration or hardware validation yet.
 
+## What has improved, in plain English
+
+Enhanced improves the communication between MiSTer cores and BlisSTer:
+
+- **Consistent controller readings:** buttons and sticks are updated together only after a complete reply has arrived. An incomplete reply cannot overwrite part of the previous reading.
+- **Better handling of connection problems:** bounded waits prevent the driver from waiting forever in the tested failure cases. When a connection is lost, controls are cleared to reduce the risk of stuck inputs.
+- **Controller changes and reconnection:** the driver queries the controller modes again after reconnecting or detecting a different controller type, instead of keeping stale settings.
+- **Pressure and rumble commands:** previously declared functionality is connected to an optional interface that a core can use to request button pressure or send rumble commands, where supported. Each core must still integrate these features.
+- **More reliable reply synchronization:** a byte-alignment problem found with slightly slower simulated replies has been corrected. This is not a guarantee of compatibility with every physical device.
+
+These changes use the existing LLAPI protocol and do not introduce a requirement to flash new BlisSTer firmware. Compatibility with real devices still needs physical testing.
+
+The completed simulation runs passed: 30 regression configurations and four additional focused timing/payload configurations were run separately, not as one combined 34-configuration run. The affected two-port I/O Tester integration simulations also passed. Simulation does not prove FPGA timing or real controller behavior.
+
+**Still to do:** complete FPGA compilation and timing/resource checks, validate the 1942 integration, and test real BlisSTer hardware and controllers. 1942 is the first game pilot for digital inputs and reconnection; it cannot validate analog input, pressure or rumble. No reduction in latency or resource use has been demonstrated. Real motor behavior and independent motor control remain unverified.
+
+## Credits
+
+- **Jamie Dickson (Kitrinx):** original MiSTer LLAPI driver and the foundation this work builds on. The original copyright notice and MIT license are preserved.
+- **UltimateMiSTer:** Enhanced project development, integration work, regression testing and documentation.
+- **Bliss-Box / ulao:** existing LLAPI protocol documentation and public transport-parser reference. The public firmware example is partial; it is not a complete motor-control firmware source.
+
+## Was Gamer-Pro Advanced code used?
+
+No Gamer-Pro Advanced firmware or LLAPI implementation code has been imported into this Enhanced driver. A separate USB controller-mapping reference was collected for possible gamecontrollerdb work; that does not implement LLAPI or rumble here.
+
+Gamer-Pro Advanced source reuse remains a possible later evaluation, subject to source availability, licensing and hardware/protocol compatibility. It is not a dependency for the current Enhanced changes or the 1942 pilot. The present improvements build on Kitrinx's driver and the existing LLAPI protocol.
+
 ## Goal and priorities
 
 Complete and improve the MiSTer driver while preserving compatibility with existing BlisSTer firmware and its two LLAPI ports. Firmware changes and potential reuse of Gamer-Pro Advanced code will only be considered afterward, subject to availability, licensing and compatibility.
@@ -37,6 +65,8 @@ A dedicated `stuck_leadin_tb.sv` test covers a device holding latch and data low
 
 ## Next steps
 
+Current priority: complete and validate LLAPI Enhanced first, then use I/O Tester as the first hardware test core. MT32-Pi is deferred; SNAC is optional follow-up work.
+
 1. Extend fault coverage for disconnect/reset during payload writes and electrical timing variation.
 2. Measure resource usage and polling times; integrate a pilot core and run Quartus/timing checks.
 3. Validate modes, pressure support and rumble effects on physical BlisSTer hardware with representative controllers.
@@ -67,3 +97,5 @@ LLAPI Enhanced cores initially belong in `_LLAPI/_Experimental`, with Enhanced i
 ## Progress tracking
 
 Progress, tests and limitations are recorded in [CHANGELOG.md](CHANGELOG.md). Project documentation is maintained in English.
+
+Local additional coverage: `PRESSURE_FAULTS=1` tests all12 nonempty incomplete pressure replies. Each must report timeout with no partial reply, preserve ordinary controller inputs, and recover with all13 bytes correct on the next request. This extends test coverage; no driver change or hardware claim.
