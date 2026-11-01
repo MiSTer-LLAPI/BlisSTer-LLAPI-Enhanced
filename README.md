@@ -18,6 +18,24 @@ The completed simulation runs passed: 30 regression configurations and four addi
 
 **Still to do:** complete FPGA compilation and timing/resource checks, validate the 1942 integration, and test real BlisSTer hardware and controllers. 1942 is the first game pilot for digital inputs and reconnection; it cannot validate analog input, pressure or rumble. No reduction in latency or resource use has been demonstrated. Real motor behavior and independent motor control remain unverified.
 
+## Kitrinx's original driver and Enhanced
+
+Kitrinx's driver already provided the essential controller connection: it read buttons, the D-pad and analog values, identified the controller type, and scheduled regular reads. Enhanced builds on that work.
+
+| Feature | Kitrinx's original driver | Enhanced |
+| --- | --- | --- |
+| Read buttons and sticks | Already supported. | Keeps this support. |
+| Identify the controller | Already reported the controller type. | Keeps it and refreshes mode information when the type changes. |
+| Keep readings together | Controller type and controls could update at different points in a reply. | Updates them together after a complete reply. |
+| Handle connection problems | Already had basic timeout and input-clearing logic. | Adds safeguards for more failure cases, including a device holding the connection busy. |
+| Start from a known state | Cleared controls when disabled, but did not reset all internal counters. | Resets the internal state as well. |
+| Read controller modes | Some mode-reading code was present, but the normal reading sequence did not activate it. | Automatically requests modes on connection or controller change, with a fallback if unavailable. |
+| Pressure and rumble | Command names were listed, but there was no usable interface for a core to request them. | Adds an optional interface for cores to request pressure readings and send rumble commands. Actual support depends on the controller and adapter. |
+| Read replies reliably | Already handled the LLAPI signal and byte timing. | Fixes a reply-alignment issue reproduced with slightly slower simulated replies. |
+| Speed and FPGA size | No matched comparison has been measured. | No faster response or smaller FPGA footprint has been demonstrated. |
+
+This comparison refers to the [preserved Kitrinx driver](reference/SNES_MiSTer-a922e326-llapi.sv), not every LLAPI version or core. Enhanced improvements have been tested in simulation; FPGA timing and real hardware behavior still need validation. Sending a rumble command is not proof that a physical motor works correctly.
+
 ## Credits
 
 - **Jamie Dickson (Kitrinx):** original MiSTer LLAPI driver and the foundation this work builds on. The original copyright notice and MIT license are preserved.
