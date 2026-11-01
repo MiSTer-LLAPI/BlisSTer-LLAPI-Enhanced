@@ -24,12 +24,6 @@ The completed simulation runs passed: 30 regression configurations and four addi
 - **UltimateMiSTer:** Enhanced project development, integration work, regression testing and documentation.
 - **Bliss-Box / ulao:** existing LLAPI protocol documentation and public transport-parser reference. The public firmware example is partial; it is not a complete motor-control firmware source.
 
-## Was Gamer-Pro Advanced code used?
-
-No Gamer-Pro Advanced firmware or LLAPI implementation code has been imported into this Enhanced driver. A separate USB controller-mapping reference was collected for possible gamecontrollerdb work; that does not implement LLAPI or rumble here.
-
-Gamer-Pro Advanced source reuse remains a possible later evaluation, subject to source availability, licensing and hardware/protocol compatibility. It is not a dependency for the current Enhanced changes or the 1942 pilot. The present improvements build on Kitrinx's driver and the existing LLAPI protocol.
-
 ## Goal and priorities
 
 Complete and improve the MiSTer driver while preserving compatibility with existing BlisSTer firmware and its two LLAPI ports. Firmware changes and potential reuse of Gamer-Pro Advanced code will only be considered afterward, subject to availability, licensing and compatibility.
