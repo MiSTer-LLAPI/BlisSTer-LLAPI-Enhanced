@@ -57,20 +57,6 @@ The reference test uses a temporary copy with three syntax normalizations for Ic
 
 A dedicated `stuck_leadin_tb.sv` test covers a device holding latch and data low, timeout, neutral controls, no transmissions while blocked, rejection of one-line-only releases and short release glitches, and successful reception after a stable release. This does not establish recovery from every possible stuck-line condition.
 
-## Next steps
-
-Current priority: validate LLAPI Enhanced and integrate 1942 as the first game pilot, including exclusive SNAC modes based on the final 1943/1944 integrations. I/O Tester development and other core work are paused. N64 is a later step; MT32-Pi remains deferred.
-
-1. Extend fault coverage for disconnect/reset during payload writes and electrical timing variation.
-2. Measure resource usage and polling times; integrate a pilot core and run Quartus/timing checks.
-3. Validate modes, pressure support and rumble effects on physical BlisSTer hardware with representative controllers.
-
-The command interface is opt-in; existing cores must explicitly integrate the new inputs/outputs to use pressure or rumble. Mode writes require an additional opt-in parameter. Neither firmware changes nor SNAC support are included.
-
-No resource or latency improvements have been measured yet. Independent motor control through current firmware is not promised. Persistent mapping/player writes and undocumented features are outside this implementation.
-
-`features_tb.sv` exercises automatic modes with a valid bitmap, all three documented errors and no reply, plus pressure, rumble/mode payloads, explicit command errors, timeout recovery, guarded sync timing and fair polling. Separate configurations verify that mode writes are rejected when disabled and that a 2 ms controller-poll busy interval is accepted.
-
 ## Reference documentation
 
 - [Bliss-Box protocol](https://bliss-box.com/pages/integration)
