@@ -426,9 +426,11 @@ always_ff @(posedge CLK_50M) begin
             end
         end
 
+		// Allow the actual byte-sync edge to arrive before falling back.
+		// Ignore early edges belonging to the preceding final data bit.
 		STATE_READ_WAIT: begin // the space between the bytes
-			if (cycle > (TIME_SYNC_H + TIME_SYNC_L + 'd5) ||
-				((cycle > 'd25) && ~old_data && data_in)) begin // Re align during wait if needed
+			if (cycle > ((TIME_SYNC_H + TIME_SYNC_L) * 2) ||
+				((cycle > TIME_SYNC_H) && ~old_data && data_in)) begin // Re align during wait if needed
 				cycle <= 0;
 				read_bit <= 3'h0;
 				if (read_byte >= read_length) state <= STATE_READ_END; else state <= STATE_READ;
