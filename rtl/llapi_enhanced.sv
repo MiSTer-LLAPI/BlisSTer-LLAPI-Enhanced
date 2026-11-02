@@ -184,7 +184,10 @@ typedef enum bit [3:0] {
 // Conservative receive-start limit: 1 ms at 50 MHz; requires hardware validation.
 localparam [20:0] RECEIVE_START_TIMEOUT = 21'd50000;
 
-logic [20:0]  cycle, count, poll_offset, poll_counter, poll_offset_latch, sync_counter;
+logic [20:0]  cycle, poll_offset, poll_counter, poll_offset_latch, sync_counter;
+// count reaches at most TIME_WAIT+1=501; larger values reset before increment commits.
+localparam integer COUNT_WIDTH = $clog2(TIME_WAIT + 2);
+logic [COUNT_WIDTH-1:0] count;
 logic [31:0]  write_buffer;
 logic [3:0]   write_length;
 logic [2:0]   read_bit; // Relies on overflow
@@ -195,7 +198,9 @@ logic [3:0]   read_length;
 logic modes_attempted, command_busy, command_slot;
 logic [1:0] payload_remaining;
 logic [7:0] active_opcode;
-logic [20:0] transaction_timer;
+localparam integer TRANSACTION_LIMIT = TIME_POLL > RECEIVE_START_TIMEOUT ? TIME_POLL : RECEIVE_START_TIMEOUT;
+localparam integer TRANSACTION_WIDTH = $clog2(TRANSACTION_LIMIT + 1);
+logic [TRANSACTION_WIDTH-1:0] transaction_timer;
 function automatic valid_command(input [7:0] op);
     valid_command = op == 8'h02 || op == 8'h21 || op == 8'h11 || op == 8'h12 ||
         op == 8'h14 || op == 8'h18 || op == 8'h1a || op == 8'h1b || op == 8'h1c ||
@@ -206,6 +211,31 @@ function automatic protocol_error(input [7:0] v);
 endfunction
 logic [31:0] pending_buttons;
 logic [71:0] pending_analog;
+// Decode the receive buffer directly; public registers still update only after packet_complete.
+assign pending_buttons = {
+							4'd0, 
+							(read_buffer[12][3] ? 4'd0 :
+							{
+								(read_buffer[12][2:0] == 3'h0 || read_buffer[12][2:0] == 3'h1 || read_buffer[12][2:0] == 3'h7), //U
+								(read_buffer[12][2:0] == 3'h4 || read_buffer[12][2:0] == 3'h3 || read_buffer[12][2:0] == 3'h5), //D
+								(read_buffer[12][2:0] == 3'h6 || read_buffer[12][2:0] == 3'h5 || read_buffer[12][2:0] == 3'h7), //L
+								(read_buffer[12][2:0] == 3'h2 || read_buffer[12][2:0] == 3'h1 || read_buffer[12][2:0] == 3'h3) //R
+							}),
+							read_buffer[3],
+							read_buffer[2],
+							read_buffer[1]
+						};
+assign pending_analog = {
+							read_buffer[12],
+							read_buffer[11],
+							read_buffer[10],
+							read_buffer[9],
+							read_buffer[8],
+							read_buffer[7],
+							read_buffer[6],
+							read_buffer[5],
+							read_buffer[4]
+						};
 logic [7:0] pending_type;
 logic packet_complete;
 logic [31:0]  lljs_buttons;
@@ -250,7 +280,7 @@ always_ff @(posedge CLK_50M) begin
 	if (ENABLE) begin
     CMD_DONE <= 0;
     if (stage != READ_IDLE || state != STATE_IDLE) begin
-        if (transaction_timer != 21'h1fffff) transaction_timer <= transaction_timer + 1'b1;
+        if (transaction_timer != {TRANSACTION_WIDTH{1'b1}}) transaction_timer <= transaction_timer + 1'b1;
     end else transaction_timer <= 0;
 	old_sync <= new_sync;
 	new_sync <= LLAPI_SYNC;
@@ -455,31 +485,9 @@ always_ff @(posedge CLK_50M) begin
 						end
 					end else if (read_byte == 'd12 && stage == READ_STATUS) begin
                         packet_complete <= 1;
-						pending_buttons[31:0] <= {
-							4'd0, 
-							(read_buffer[12][3] ? 4'd0 :
-							{
-								(read_buffer[12][2:0] == 3'h0 || read_buffer[12][2:0] == 3'h1 || read_buffer[12][2:0] == 3'h7), //U
-								(read_buffer[12][2:0] == 3'h4 || read_buffer[12][2:0] == 3'h3 || read_buffer[12][2:0] == 3'h5), //D
-								(read_buffer[12][2:0] == 3'h6 || read_buffer[12][2:0] == 3'h5 || read_buffer[12][2:0] == 3'h7), //L
-								(read_buffer[12][2:0] == 3'h2 || read_buffer[12][2:0] == 3'h1 || read_buffer[12][2:0] == 3'h3) //R
-							}),
-							read_buffer[3],
-							read_buffer[2],
-							read_buffer[1]
-						};
+						
 
-						pending_analog[71:0] <= {
-							read_buffer[12],
-							read_buffer[11],
-							read_buffer[10],
-							read_buffer[9],
-							read_buffer[8],
-							read_buffer[7],
-							read_buffer[6],
-							read_buffer[5],
-							read_buffer[4]
-						};
+						
 					end
 					poll_offset_latch <= poll_offset < (21'h1fffff - TIME_BUFFER) ? poll_offset + TIME_BUFFER : 21'h1fffff;
 					read_byte <= read_byte + 1'd1;
@@ -568,7 +576,7 @@ always_ff @(posedge CLK_50M) begin
         modes_attempted <= 0; MODES_VALID <= 0; command_busy <= 0; command_slot <= 0;
         payload_remaining <= 0; active_opcode <= 0; transaction_timer <= 0;
         CMD_DONE <= 0; CMD_ERROR <= 0; CMD_REPLY <= 0; CMD_REPLY_LENGTH <= 0;
-        pending_type <= 0; pending_buttons <= 0; pending_analog <= 0; packet_complete <= 0;
+        pending_type <= 0;   packet_complete <= 0;
         cycle <= 0; count <= 0; poll_offset <= 0; poll_counter <= 0;
         poll_offset_latch <= 0; sync_counter <= 0; poll_time <= TIME_POLL;
         write_buffer <= 0; write_length <= 0;
