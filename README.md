@@ -8,8 +8,10 @@ Current driver source: [v0.1.0](https://github.com/MiSTer-LLAPI/BlisSTer-LLAPI-E
 
 ## What has improved
 
-Enhanced improves the communication between MiSTer cores and BlisSTer:
+Enhanced adds a more compact internal implementation, stronger error handling and usable interfaces for functionality that was declared or partially implemented in the preserved original driver. It builds on Kitrinx's existing controller-input support:
 
+- **More compact internal logic:** narrower bounded counters and removal of redundant pending button/axis registers reduce explicit state storage while preserving coherent controller readings. FPGA savings must be measured per core; this is not a claim that Enhanced is smaller than the original driver with fewer features.
+- **Extended functionality:** automatic controller-mode queries and an optional atomic interface make pressure and rumble commands available to integrating cores, subject to adapter/controller support. Mode writes remain disabled by default.
 - **Consistent controller readings:** buttons and sticks are updated together only after a complete reply has arrived. An incomplete reply cannot overwrite part of the previous reading.
 - **Better handling of connection problems:** bounded waits prevent the driver from waiting forever in the tested failure cases. When a connection is lost, controls are cleared to reduce the risk of stuck inputs.
 - **Controller changes and reconnection:** the driver queries the controller modes again after reconnecting or detecting a different controller type, instead of keeping stale settings.
@@ -38,7 +40,8 @@ Kitrinx's driver already provided the essential controller connection: it read b
 | Read controller modes | Some mode-reading code was present, but the normal reading sequence did not activate it. | Automatically requests modes on connection or controller change, with a fallback if unavailable. |
 | Pressure and rumble | Command names were listed, but there was no usable interface for a core to request them. | Adds an optional interface for cores to request pressure readings and send rumble commands. Actual support depends on the controller and adapter. |
 | Read replies reliably | Already handled the LLAPI signal and byte timing. | Fixes a reply-alignment issue reproduced with slightly slower simulated replies. |
-| Speed and FPGA size | No matched comparison has been measured. | No faster response or smaller FPGA footprint has been demonstrated. |
+| Internal storage | Original implementation provides the baseline functionality. | Recent Enhanced revisions narrow bounded counters and remove redundant snapshot storage. Extra features can still make the complete driver larger than the original. |
+| Response speed and FPGA footprint | Comparison requires equivalent core features and build settings. | Lower physical input latency has not been demonstrated. Core resource measurements are tracked separately; storage optimization is not a speed claim. |
 
 This comparison refers to the [preserved Kitrinx driver](reference/SNES_MiSTer-a922e326-llapi.sv), not every LLAPI version or core. These driver changes are tested in simulation; each core integration needs its own FPGA timing and hardware validation. Sending a rumble command is not proof that a physical motor works correctly.
 
@@ -107,3 +110,51 @@ Additional regression coverage: `PRESSURE_FAULTS=1` tests all12 nonempty incompl
 ## Updating integrations
 
 The storage optimization is an optional maintenance update for existing cores, not a mandatory protocol or firmware migration. Keep each release pinned to its exact driver commit. Plan and test updates individually: 1944 Enhanced v0.2.0 and the verified 1943 baseline retain the earlier driver; the PSX candidate already contains these optimizations but does not fit. Existing published PSX Diagnostic/Dual builds remain unchanged. Menus, autofire, SNAC routing, controller guides and pause effects belong to the core integration, not this transport driver. Do not add optional FPGA logic to constrained cores without available capacity and passing timing.
+
+## Disconnect handling: driver and core responsibilities
+
+The transport driver handles polling, complete replies, timeout/error recovery and reported link/controller state. Loss of communication is not proof of physical unplug: adapter reset, firmware behavior, wiring or a transient fault may also cause it. A host-requested transport disable (for example while OSD is open) must not be classified as unplug.
+
+The integrating core owns gameplay policy: neutral controls, clearing the affected player's latched autofire, optional pause on qualified loss, pause reason and user confirmation before resuming. It must preserve the other player's connection. Core logic must not reset the game when rediscovering a controller. Rediscovery/reset is per port and must use the driver's supported interface; it does not imply a hardware reset command was sent to the adapter or gamepad.
+
+SNAC readers must provide their own protocol-specific validity. Do not infer disconnect from no buttons pressed. When a reader cannot reliably distinguish an idle controller from an absent one, automatic disconnect pause is unavailable and manual pause remains necessary.
+
+### Reuse and validation checklist
+
+- Pin driver version, commit and file hash in each core release.
+- Validate A-only, B-only and both ports; distinct simultaneous input; disconnect either port while preserving the other; adapter reset; reconnect with a different controller type.
+- Test unused ports, transient communication loss, intentional polling suspension/OSD, interface changes and manual pause interaction.
+- Clear stale buttons/autofire on loss; qualify loss only after a previously valid connection; do not resume gameplay automatically on reconnection.
+- Keep transport recovery, reusable pause policy and game-specific UI/routing separate. Reuse tested modules rather than independent copies with undocumented differences.
+- Use the official Main interface only. Validate simulation, per-core Quartus fit/timing/resources and hardware separately.
+
+Current development status (2026-11-02): the 1943 candidate contains a standalone controller-loss pause policy fixture. Its simulated tests pass, but it is NOT yet connected to the core pause path or driver rediscovery. This is not a released driver feature or a completed core feature. The reported physical 1943 port-B failure remains unresolved. Reuse requires integration tests in each core; no previously released core is silently updated.
+
+Development policy: neutralize invalid inputs immediately, but request pause only after 2000 consecutive millisecond loss ticks. Recovery before the threshold cancels pending pause; reconnection after pause requires explicit resume. The standalone policy tests pass; a real millisecond timebase and core integration remain pending.
+
+
+### v0.2.0-dev telemetry (not yet released)
+
+`STATUS_VALID` qualifies the last complete controller snapshot; `STATUS_UPDATE`
+is a one-cycle publication event; `LINK_FAULT` is a one-cycle transport/status
+failure event. They do not distinguish a physically removed controller from an
+unresponsive adapter. Keep the two-second loss filter and manual-resume policy
+in the core. Ignore intentional interface disable and OSD suspension. An
+auxiliary-command fault alone must not cause a disconnect pause.
+
+Use ENABLE low for at least one CLK_50M edge to reset only the affected driver
+instance, then re-enable it for normal discovery. This does not reset BlisSTer
+firmware or guarantee physical motor stop. Same-type reconnect already refreshes
+modes after observed link loss. Each port must remain independently instantiated.
+
+No default diagnostic counters were added. Consumers that do not connect the
+new outputs can allow synthesis to remove their logic. New resource/timing
+measurements are pending; no lower physical latency is claimed.
+
+
+### Change-recording policy
+
+Every driver code change must be recorded in this GitHub repository with its
+source, regression tests, changelog, version identifier and validation limits.
+Core releases pin the exact driver revision and hash. Development versions must
+remain clearly distinguished from tagged releases and hardware validation.

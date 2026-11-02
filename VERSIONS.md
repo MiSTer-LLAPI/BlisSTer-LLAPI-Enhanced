@@ -117,3 +117,8 @@ Every original commit through v0.1.0 is listed below, including documentation-on
 - Each update records its exact commit, driver SHA-256, changes from the preceding version, test evidence and limits, and whether each consuming core needs a required or optional update.
 - Each core pins a driver revision; its RBF has independent provenance, fitting, five timing-category checks and hardware status. Source publication does not silently replace core binaries.
 - Preserve Kitrinx/Jamie Dickson attribution and the MIT driver license. Jotego cores retain GPL and all applicable dependency notices. No licensing relabeling.
+
+
+## v0.2.0-dev (unreleased candidate)
+
+Adds optional snapshot validity/publication/fault telemetry. No new transport commands or timing changes. Based on v0.1.0; no release commit or tag assigned until validation/publication. See CHANGELOG.md and README.md for semantics and integration boundaries.

@@ -1,5 +1,15 @@
 # BlisSTer LLAPI Enhanced changelog
 
+## v0.2.0-dev — connection telemetry (unreleased)
+
+- Added `STATUS_VALID`: combinational qualification of the existing complete snapshot and link state; no extra validity storage. This is not a physical-presence detector.
+- Added single-cycle `STATUS_UPDATE` on complete successful status publication, and `LINK_FAULT` on status errors or transport timeout. Auxiliary-command timeouts may raise LINK_FAULT while STATUS_VALID remains high; cores must not pause on an isolated fault pulse.
+- Intentional ENABLE=0 clears telemetry without reporting unplug. Existing per-instance disable/reset remains the supported rediscovery mechanism; no new firmware command or board-reset control was invented.
+- Existing atomic snapshots, same-type reconnection mode refresh, timeout neutralization and per-instance recovery retained. No polling schedule or wire timing changes.
+- Two event registers added in RTL; unused outputs are eligible for synthesis pruning. No Quartus area or latency improvement claimed. Diagnostic counters deliberately omitted.
+- Named-port integrations can leave new outputs open. Positional instantiations must be updated. Telemetry is in CLK_50M; cross-domain consumers must synchronize levels and capture pulses safely.
+- 1943 development candidate uses the new source; published cores remain unchanged. P2 hardware issue is not fixed by this change.
+
 The complete version-by-version differences, checksums, compatibility notes and every original commit are recorded in [VERSIONS.md](VERSIONS.md).
 
 ## v0.1.0 — 2026-11-02
