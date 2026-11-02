@@ -1,5 +1,21 @@
 # BlisSTer LLAPI Enhanced changelog
 
+## v0.2.1-dev — compact fault classification
+
+Adds optional `FAULT_REASON[1:0]`, valid only during `LINK_FAULT`:
+
+| Value | Meaning |
+|---|---|
+| 0 | No fault event on this cycle |
+| 1 | Poll/start/general transaction timeout |
+| 2 | Rejected status response (protocol error or complete type-zero status) |
+| 3 | Transaction watchdog expired during receive/byte-wait phase |
+
+The code describes the detected condition, not its physical cause. A truncated reply can lead to code 1 or 3 depending on where reception stopped; neither proves unplug. Intentional `ENABLE=0` clears both event and reason. Capture the reason with the fault pulse in `CLK_50M`; use a safe event/mailbox transfer across clock domains.
+
+Two additional RTL register bits; no new timers, counters, receive buffers, opcodes or polling changes. Unused outputs may be optimized away; actual FPGA usage remains a per-core Quartus measurement. Existing complete-packet publication, neutralization and redetection behavior are retained. No reduced-latency or P2 hardware-fix claim.
+
+
 ## v0.2.0-dev — connection telemetry (unreleased)
 
 - Added `STATUS_VALID`: combinational qualification of the existing complete snapshot and link state; no extra validity storage. This is not a physical-presence detector.

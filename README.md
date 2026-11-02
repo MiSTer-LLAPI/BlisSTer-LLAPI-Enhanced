@@ -4,7 +4,7 @@ A compact, robust LLAPI driver for MiSTer, with coherent controller readings, bo
 
 ## Versions
 
-Current development source: **v0.2.0-dev**. Latest tagged release: [v0.1.0](https://github.com/MiSTer-LLAPI/BlisSTer-LLAPI-Enhanced/releases/tag/v0.1.0).
+Current development source: **v0.2.1-dev**. Latest tagged release: [v0.1.0](https://github.com/MiSTer-LLAPI/BlisSTer-LLAPI-Enhanced/releases/tag/v0.1.0).
 
 See [CHANGELOG.md](CHANGELOG.md) for changes and [VERSIONS.md](VERSIONS.md) for version history. Driver versions are independent of core release numbers. Each core release records its exact driver revision and file hash.
 
@@ -19,6 +19,21 @@ See [CHANGELOG.md](CHANGELOG.md) for changes and [VERSIONS.md](VERSIONS.md) for 
 - **Consistent startup:** disabling an instance resets its transaction, synchronization and controller state deterministically.
 
 FPGA resource usage must be measured in each core integration. Lower physical input latency has not been demonstrated. Pressure and rumble require integration and physical testing with the relevant controller and adapter.
+
+## v0.2.1-dev — compact fault classification
+
+Adds optional `FAULT_REASON[1:0]`, valid only during `LINK_FAULT`:
+
+| Value | Meaning |
+|---|---|
+| 0 | No fault event on this cycle |
+| 1 | Poll/start/general transaction timeout |
+| 2 | Rejected status response (protocol error or complete type-zero status) |
+| 3 | Transaction watchdog expired during receive/byte-wait phase |
+
+The code describes the detected condition, not its physical cause. A truncated reply can lead to code 1 or 3 depending on where reception stopped; neither proves unplug. Intentional `ENABLE=0` clears both event and reason. Capture the reason with the fault pulse in `CLK_50M`; use a safe event/mailbox transfer across clock domains.
+
+Two additional RTL register bits; no new timers, counters, receive buffers, opcodes or polling changes. Unused outputs may be optimized away; actual FPGA usage remains a per-core Quartus measurement. Existing complete-packet publication, neutralization and redetection behavior are retained. No reduced-latency or P2 hardware-fix claim.
 
 ## New in v0.2.0-dev
 
@@ -37,6 +52,8 @@ These signals run in the `CLK_50M` domain. Synchronize levels and capture pulses
 `STATUS_VALID` is snapshot validity, not a physical-presence sensor or a freshness timer. An auxiliary-command timeout can raise `LINK_FAULT` while the controller snapshot remains valid. Do not pause gameplay on an isolated fault pulse.
 
 ## Validation
+
+For v0.2.1-dev, fault classification and cycle-equivalence tests are added to the existing regression. Results are recorded in `tests/v0.2.1-validation.json`; FPGA fitting and hardware remain pending.
 
 The complete driver regression passed **35 configurations**. Coverage includes complete and truncated status packets, interrupted payloads, mode queries, controller changes, same-type reconnection, receive timing variation and prolonged blocked-bus recovery.
 
@@ -64,7 +81,7 @@ For per-port rediscovery, hold that instance's `ENABLE` low for at least one `CL
 
 The integrating core should neutralize invalid inputs and clear latched autofire, qualify sustained loss after a previously valid connection, preserve the other player's inputs and require explicit confirmation before resuming after a disconnect pause.
 
-The proposed 1943 pause policy waits for **2000 consecutive millisecond loss ticks**. Brief recovery cancels the pending pause; reconnection after a pause does not resume automatically. The standalone policy and millisecond divider have passed simulation, but the policy is not yet integrated into the core pause path or released as a complete feature.
+The proposed 1943 pause policy waits for **2000 consecutive millisecond loss ticks**. Brief recovery cancels the pending pause; reconnection after a pause does not resume automatically. The 1943 development integration has passed simulated loss, reconnection and explicit-resume tests. Its release and physical validation are tracked separately from the driver.
 
 ## SNAC and USB integration
 

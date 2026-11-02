@@ -122,3 +122,19 @@ Every original commit through v0.1.0 is listed below, including documentation-on
 ## v0.2.0-dev (unreleased candidate)
 
 Adds optional snapshot validity/publication/fault telemetry. No new transport commands or timing changes. Based on v0.1.0; no release commit or tag assigned until validation/publication. See CHANGELOG.md and README.md for semantics and integration boundaries.
+
+## v0.2.1-dev — compact fault classification
+
+Adds optional `FAULT_REASON[1:0]`, valid only during `LINK_FAULT`:
+
+| Value | Meaning |
+|---|---|
+| 0 | No fault event on this cycle |
+| 1 | Poll/start/general transaction timeout |
+| 2 | Rejected status response (protocol error or complete type-zero status) |
+| 3 | Transaction watchdog expired during receive/byte-wait phase |
+
+The code describes the detected condition, not its physical cause. A truncated reply can lead to code 1 or 3 depending on where reception stopped; neither proves unplug. Intentional `ENABLE=0` clears both event and reason. Capture the reason with the fault pulse in `CLK_50M`; use a safe event/mailbox transfer across clock domains.
+
+Two additional RTL register bits; no new timers, counters, receive buffers, opcodes or polling changes. Unused outputs may be optimized away; actual FPGA usage remains a per-core Quartus measurement. Existing complete-packet publication, neutralization and redetection behavior are retained. No reduced-latency or P2 hardware-fix claim.
+
