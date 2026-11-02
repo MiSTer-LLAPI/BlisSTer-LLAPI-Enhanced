@@ -2,6 +2,10 @@
 
 Improving LLAPI integration between MiSTer cores and BlisSTer. The LLAPI protocol is not exclusive to BlisSTer; this project focuses on that hardware and its two LLAPI ports. Status: experimental. The earlier driver revision is integrated in the published 1944 Enhanced v0.2.0; the storage optimizations below require validation in each target core. Full hardware validation remains pending.
 
+## Versions
+
+Current driver source: [v0.1.0](https://github.com/MiSTer-LLAPI/BlisSTer-LLAPI-Enhanced/releases/tag/v0.1.0). See [all versions and differences](VERSIONS.md) for historical snapshots, exact commits/checksums, validation and core-update impact. Driver versions are independent of arcade/core release numbers.
+
 ## What has improved
 
 Enhanced improves the communication between MiSTer cores and BlisSTer:
