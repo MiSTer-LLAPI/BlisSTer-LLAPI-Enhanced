@@ -118,7 +118,12 @@ module LLAPI_Enhanced #(
     output reg [7:0] CMD_ERROR, // 0=transport completed, E0=timeout, E1=rejected
     output reg [103:0] CMD_REPLY,
     output reg [3:0] CMD_REPLY_LENGTH,
-    output reg MODES_VALID
+    output reg MODES_VALID,
+    // CLK_50M domain. VALID refers to the last complete status snapshot,
+    // not proof of physical presence. UPDATE/FAULT are one-cycle events.
+    output STATUS_VALID,
+    output reg STATUS_UPDATE,
+    output reg LINK_FAULT
 );
 
 // Commands
@@ -265,6 +270,8 @@ assign LLAPI_BUTTONS = lljs_buttons;
 assign LLAPI_ANALOG = lljs_analog;
 assign LLAPI_MODES = lljs_modes;
 assign LLAPI_EN = enable;
+// Reuse existing snapshot identity and link state: no extra validity register.
+assign STATUS_VALID = ENABLE && enable && lljs_type != 0 && !protocol_error(lljs_type);
 
 always_comb begin
 	if (latch) begin
@@ -278,7 +285,7 @@ end
 
 always_ff @(posedge CLK_50M) begin
 	if (ENABLE) begin
-    CMD_DONE <= 0;
+    CMD_DONE <= 0; STATUS_UPDATE <= 0; LINK_FAULT <= 0;
     if (stage != READ_IDLE || state != STATE_IDLE) begin
         if (transaction_timer != {TRANSACTION_WIDTH{1'b1}}) transaction_timer <= transaction_timer + 1'b1;
     end else transaction_timer <= 0;
@@ -348,7 +355,7 @@ always_ff @(posedge CLK_50M) begin
 				count <= count + 1'b1;
 				if (count > TIME_WAIT) begin
 					if (stage != READ_IDLE) begin // IO timeout, device disconnect/defunct
-						enable <= 1'b0;
+						enable <= 1'b0; LINK_FAULT <= 1;
 						poll_offset <= 0;
 						poll_time <= poll_offset_latch > TIME_BUFFER ? poll_offset_latch : TIME_POLL;
 						poll_offset_latch <= 21'd350000;
@@ -425,7 +432,7 @@ always_ff @(posedge CLK_50M) begin
                 cycle <= 0; count <= 0;
                 packet_complete <= 0;
                 latch <= 0; data_out <= 1;
-                enable <= 0;
+                enable <= 0; LINK_FAULT <= 1;
                 lljs_type <= 0; lljs_modes <= 0; lljs_buttons <= 0;
                 modes_attempted <= 0; MODES_VALID <= 0;
                 lljs_analog <= 72'h080000808080808080;
@@ -514,6 +521,7 @@ always_ff @(posedge CLK_50M) begin
 			if (cycle >= TIME_WAIT) begin // bliss box holds the line low for about 3us after reply
                 // Publish type, buttons and all axes together after a complete packet.
                 if (stage == READ_STATUS && packet_complete && pending_type != 0 && !protocol_error(pending_type)) begin
+                    STATUS_UPDATE <= 1;
                     command_slot <= 1;
                     lljs_type <= pending_type;
                     lljs_buttons <= pending_buttons;
@@ -532,7 +540,7 @@ always_ff @(posedge CLK_50M) begin
                     lljs_modes <= 0; MODES_VALID <= 0; transaction_timer <= 0;
                 end
                 if (stage == READ_STATUS && ((read_byte == 1 && protocol_error(read_buffer[0])) || (packet_complete && pending_type == 0))) begin
-                    enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
+                    LINK_FAULT <= 1; enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
                     lljs_analog <= 72'h080000808080808080;
                     lljs_modes <= 0; MODES_VALID <= 0; modes_attempted <= 0;
                 end
@@ -564,6 +572,7 @@ always_ff @(posedge CLK_50M) begin
         if (is_latched || !data_in) state <= STATE_WAIT_RELEASE; else state <= STATE_IDLE;
         stage <= READ_IDLE; cycle <= 0; count <= 0; transaction_timer <= 0;
         latch <= 0; data_out <= 1; packet_complete <= 0; payload_remaining <= 0;
+        LINK_FAULT <= 1;
         if (command_busy) begin CMD_DONE <= 1; CMD_ERROR <= 8'he0; command_busy <= 0; end
         if (!auxiliary || is_latched || !data_in) begin
             enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
@@ -572,6 +581,9 @@ always_ff @(posedge CLK_50M) begin
         end
     end
     end else begin
+        // ENABLE low resets only this instance; reuse it for per-port rediscovery.
+        // Intentional disable is not a communication fault.
+        STATUS_UPDATE <= 0; LINK_FAULT <= 0;
         // ENABLE low resets transaction/synchronization state deterministically.
         modes_attempted <= 0; MODES_VALID <= 0; command_busy <= 0; command_slot <= 0;
         payload_remaining <= 0; active_opcode <= 0; transaction_timer <= 0;
