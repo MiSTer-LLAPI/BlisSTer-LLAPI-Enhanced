@@ -107,7 +107,7 @@ Existing core releases remain pinned to their own driver source. Updating the dr
 ## Credits and license
 
 - **Jamie Dickson (Kitrinx):** original MiSTer LLAPI driver. Original copyright notices and the MIT license are preserved.
-- **UltimateMiSTer.com — RickDangerous:** Enhanced project development, core integration, regression testing and documentation.
+- **UltimateMiSTer.com (RickDangerous):** Enhanced project development, core integration, regression testing and documentation.
 - **Bliss-Box / ulao:** LLAPI protocol documentation and public transport reference.
 
 The driver source is in `rtl/llapi_enhanced.sv`. See [LICENSE](LICENSE). Reference files retain their original notices; core integrations retain their respective licenses and credits.
