@@ -123,7 +123,9 @@ module LLAPI_Enhanced #(
     // not proof of physical presence. UPDATE/FAULT are one-cycle events.
     output STATUS_VALID,
     output reg STATUS_UPDATE,
-    output reg LINK_FAULT
+    output reg LINK_FAULT,
+    // Valid only with LINK_FAULT: 1 timeout, 2 rejected status, 3 receive-phase watchdog.
+    output reg [1:0] FAULT_REASON
 );
 
 // Commands
@@ -285,7 +287,7 @@ end
 
 always_ff @(posedge CLK_50M) begin
 	if (ENABLE) begin
-    CMD_DONE <= 0; STATUS_UPDATE <= 0; LINK_FAULT <= 0;
+    CMD_DONE <= 0; STATUS_UPDATE <= 0; LINK_FAULT <= 0; FAULT_REASON <= 0;
     if (stage != READ_IDLE || state != STATE_IDLE) begin
         if (transaction_timer != {TRANSACTION_WIDTH{1'b1}}) transaction_timer <= transaction_timer + 1'b1;
     end else transaction_timer <= 0;
@@ -355,7 +357,7 @@ always_ff @(posedge CLK_50M) begin
 				count <= count + 1'b1;
 				if (count > TIME_WAIT) begin
 					if (stage != READ_IDLE) begin // IO timeout, device disconnect/defunct
-						enable <= 1'b0; LINK_FAULT <= 1;
+						enable <= 1'b0; LINK_FAULT <= 1; FAULT_REASON <= 2'd1;
 						poll_offset <= 0;
 						poll_time <= poll_offset_latch > TIME_BUFFER ? poll_offset_latch : TIME_POLL;
 						poll_offset_latch <= 21'd350000;
@@ -432,7 +434,7 @@ always_ff @(posedge CLK_50M) begin
                 cycle <= 0; count <= 0;
                 packet_complete <= 0;
                 latch <= 0; data_out <= 1;
-                enable <= 0; LINK_FAULT <= 1;
+                enable <= 0; LINK_FAULT <= 1; FAULT_REASON <= 2'd1;
                 lljs_type <= 0; lljs_modes <= 0; lljs_buttons <= 0;
                 modes_attempted <= 0; MODES_VALID <= 0;
                 lljs_analog <= 72'h080000808080808080;
@@ -540,7 +542,7 @@ always_ff @(posedge CLK_50M) begin
                     lljs_modes <= 0; MODES_VALID <= 0; transaction_timer <= 0;
                 end
                 if (stage == READ_STATUS && ((read_byte == 1 && protocol_error(read_buffer[0])) || (packet_complete && pending_type == 0))) begin
-                    LINK_FAULT <= 1; enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
+                    LINK_FAULT <= 1; FAULT_REASON <= 2'd2; enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
                     lljs_analog <= 72'h080000808080808080;
                     lljs_modes <= 0; MODES_VALID <= 0; modes_attempted <= 0;
                 end
@@ -573,6 +575,7 @@ always_ff @(posedge CLK_50M) begin
         stage <= READ_IDLE; cycle <= 0; count <= 0; transaction_timer <= 0;
         latch <= 0; data_out <= 1; packet_complete <= 0; payload_remaining <= 0;
         LINK_FAULT <= 1;
+        FAULT_REASON <= (state == STATE_READ || state == STATE_READ_WAIT) ? 2'd3 : 2'd1;
         if (command_busy) begin CMD_DONE <= 1; CMD_ERROR <= 8'he0; command_busy <= 0; end
         if (!auxiliary || is_latched || !data_in) begin
             enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
@@ -583,7 +586,7 @@ always_ff @(posedge CLK_50M) begin
     end else begin
         // ENABLE low resets only this instance; reuse it for per-port rediscovery.
         // Intentional disable is not a communication fault.
-        STATUS_UPDATE <= 0; LINK_FAULT <= 0;
+        STATUS_UPDATE <= 0; LINK_FAULT <= 0; FAULT_REASON <= 0;
         // ENABLE low resets transaction/synchronization state deterministically.
         modes_attempted <= 0; MODES_VALID <= 0; command_busy <= 0; command_slot <= 0;
         payload_remaining <= 0; active_opcode <= 0; transaction_timer <= 0;
