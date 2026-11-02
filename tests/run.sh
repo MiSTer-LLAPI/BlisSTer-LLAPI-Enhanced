@@ -73,3 +73,10 @@ done
 # Keep the bus quarantined beyond the old 21-bit timer range, then recover.
 iverilog -g2012 -s long_wait_tb -o "$build/long-wait" rtl/llapi_enhanced.sv tests/long_wait_tb.sv
 vvp "$build/long-wait"
+
+# Classify faults at each source and clear the reason on intentional disable.
+iverilog -g2012 -s fault_reason_tb -o "$build/fault-reason" rtl/llapi_enhanced.sv tests/fault_reason_tb.sv
+vvp "$build/fault-reason"
+# Existing public outputs must stay identical across same-type reconnect.
+iverilog -g2012 -s features_tb -Pfeatures_tb.TYPE_RECONNECT=1 -o "$build/equivalence" rtl/llapi_enhanced.sv tests/baseline_v020.sv tests/equivalence_v021_tb.sv
+vvp "$build/equivalence"

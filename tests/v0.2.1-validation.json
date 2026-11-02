@@ -1,0 +1,20 @@
+{
+  "version": "v0.2.1-dev",
+  "rtl_commit": "bf866b201f3f96c1a2a5048d903891d652586b47",
+  "rtl_sha256": "63ac038f7ae17cb996391c2249f3fa1447268b68167c25b97e6356b29985d895",
+  "regression": "PASS",
+  "regression_pass_lines": 37,
+  "exit_code": 0,
+  "classification_test": "PASS directed state-boundary test",
+  "cycle_equivalence": "PASS existing outputs with v0.2.0 during controller change/same-type reconnect",
+  "1943_integration_fixtures": 12,
+  "1943_dual_wire": "PASS simulated loss/reconnect/OSD/ack",
+  "1943_actual_hps_rom": "PASS 2048 bytes",
+  "new_register_bits": 2,
+  "new_counters": 0,
+  "new_timers": 0,
+  "quartus_resources": null,
+  "hardware_validation": "pending",
+  "p2_fix": false,
+  "affected_cores": "Optional update only; existing released binaries unchanged"
+}

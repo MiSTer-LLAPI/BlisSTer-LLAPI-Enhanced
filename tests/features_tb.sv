@@ -12,6 +12,7 @@ module features_tb;
  reg clk=0,en=0,sync=0,li=1,di=1,valid=0;
  reg [7:0] op=0;reg [15:0] payload=0;
  wire lo,dout,active,ready,done,mvalid,status_valid,status_update,link_fault;
+ wire[1:0] fault_reason;
  integer updates=0,faults=0;
  reg previous_update=0,previous_fault=0;
  wire [7:0] kind,modes,err;wire[31:0] buttons;wire[71:0] analog_data;
@@ -24,7 +25,8 @@ module features_tb;
    updates=updates+1;
    if(!status_valid || kind==0) $fatal(1,"update without valid snapshot");
   end
-  if(link_fault) faults=faults+1;
+  if(link_fault) begin faults=faults+1;if(fault_reason==0)$fatal(1,"fault without reason");end
+  if(!link_fault && fault_reason!==0 && $time>100)$fatal(1,"reason persists outside fault pulse");
   if(!en && status_valid) $fatal(1,"disabled snapshot valid");
  end
  always #10 clk=~clk;
@@ -33,7 +35,7 @@ module features_tb;
  .IO_LATCH_OUT(lo),.IO_DATA_OUT(dout),.LLAPI_EN(active),.LLAPI_TYPE(kind),
  .LLAPI_MODES(modes),.LLAPI_BUTTONS(buttons),.LLAPI_ANALOG(analog_data),
  .CMD_VALID(valid),.CMD_OPCODE(op),.CMD_PAYLOAD(payload),.CMD_READY(ready),
- .CMD_DONE(done),.CMD_ERROR(err),.CMD_REPLY(reply),.CMD_REPLY_LENGTH(length),.MODES_VALID(mvalid),.STATUS_VALID(status_valid),.STATUS_UPDATE(status_update),.LINK_FAULT(link_fault));
+ .CMD_DONE(done),.CMD_ERROR(err),.CMD_REPLY(reply),.CMD_REPLY_LENGTH(length),.MODES_VALID(mvalid),.STATUS_VALID(status_valid),.STATUS_UPDATE(status_update),.LINK_FAULT(link_fault),.FAULT_REASON(fault_reason));
  integer polls=0,statuses=0,queries=0,remaining=0,params=0,commands=0;
  reg [7:0] command,parameter_bytes[0:2];reg [7:0] bytes[0:12];
  reg [7:0] controller_type=11;
