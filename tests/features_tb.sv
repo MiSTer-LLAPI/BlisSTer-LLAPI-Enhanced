@@ -11,16 +11,29 @@ module features_tb;
  parameter integer MODE_REPLY=128; // -1 means unsupported/no reply
  reg clk=0,en=0,sync=0,li=1,di=1,valid=0;
  reg [7:0] op=0;reg [15:0] payload=0;
- wire lo,dout,active,ready,done,mvalid;
+ wire lo,dout,active,ready,done,mvalid,status_valid,status_update,link_fault;
+ integer updates=0,faults=0;
+ reg previous_update=0,previous_fault=0;
  wire [7:0] kind,modes,err;wire[31:0] buttons;wire[71:0] analog_data;
  wire[103:0] reply;wire[3:0] length;
+ always @(negedge clk) begin
+  if(status_update && previous_update) $fatal(1,"status pulse longer than one cycle");
+  if(link_fault && previous_fault) $fatal(1,"fault pulse longer than one cycle");
+  previous_update=status_update; previous_fault=link_fault;
+  if(status_update) begin
+   updates=updates+1;
+   if(!status_valid || kind==0) $fatal(1,"update without valid snapshot");
+  end
+  if(link_fault) faults=faults+1;
+  if(!en && status_valid) $fatal(1,"disabled snapshot valid");
+ end
  always #10 clk=~clk;
  LLAPI_Enhanced #(.COMMAND_INTERFACE(1),.ALLOW_MODE_WRITES(MODE_WRITES)) dut(
  .CLK_50M(clk),.ENABLE(en),.LLAPI_SYNC(sync),.IO_LATCH_IN(li),.IO_DATA_IN(di),
  .IO_LATCH_OUT(lo),.IO_DATA_OUT(dout),.LLAPI_EN(active),.LLAPI_TYPE(kind),
  .LLAPI_MODES(modes),.LLAPI_BUTTONS(buttons),.LLAPI_ANALOG(analog_data),
  .CMD_VALID(valid),.CMD_OPCODE(op),.CMD_PAYLOAD(payload),.CMD_READY(ready),
- .CMD_DONE(done),.CMD_ERROR(err),.CMD_REPLY(reply),.CMD_REPLY_LENGTH(length),.MODES_VALID(mvalid));
+ .CMD_DONE(done),.CMD_ERROR(err),.CMD_REPLY(reply),.CMD_REPLY_LENGTH(length),.MODES_VALID(mvalid),.STATUS_VALID(status_valid),.STATUS_UPDATE(status_update),.LINK_FAULT(link_fault));
  integer polls=0,statuses=0,queries=0,remaining=0,params=0,commands=0;
  reg [7:0] command,parameter_bytes[0:2];reg [7:0] bytes[0:12];
  reg [7:0] controller_type=11;
@@ -119,11 +132,11 @@ module features_tb;
    if(buttons[27:24]!==0)$fatal(1,"previous analog dpad mode leaked");
    query_before=queries;no_controller=1;
    wait(!active);ticks(10);
-   if(mvalid || modes!==0 || kind!==0 || buttons!==0)
+   if(status_valid || faults==0 || mvalid || modes!==0 || kind!==0 || buttons!==0)
     $fatal(1,"disconnect retained type/modes/buttons");
    no_controller=0;mode_response=128;
    wait(ready);
-   if(kind!==65 || !mvalid || modes!==128 || queries!=query_before+1)
+   if(!status_valid || updates<3 || kind!==65 || !mvalid || modes!==128 || queries!=query_before+1)
     $fatal(1,"same-type reconnect did not rediscover modes");
    before_status=statuses;wait(statuses>before_status);wait(ready);
    if(buttons[27:24]!==4'b0110)$fatal(1,"reconnected modes not applied");

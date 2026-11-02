@@ -1,0 +1,18 @@
+{
+  "version": "v0.2.0-dev",
+  "published": true,
+  "rtl_sha256": "59a150b153bf9f1fa2772fc3710850a962a919dde802d2cea2747d49e05351da",
+  "1943_prefix_identical": true,
+  "1943_combined_sha256": "bf269ba12a90869586ec5a6c40714effc9ee50de2ac3ab1b4f59400696272e47",
+  "added_event_registers": 2,
+  "new_counters": 0,
+  "quartus_resources": null,
+  "wire_equivalence": "PASS same-type reconnect fixture",
+  "integration_fixtures": 12,
+  "dual_wire_bridge": "PASS simulation only",
+  "driver_regression": "PASS",
+  "driver_regression_pass_lines": 35,
+  "rtl_commit": "acd96db2c496b7abd482c9233c2fe53a45039c9a",
+  "publication_kind": "development source, not tagged release",
+  "core_build_run": 41489375039
+}
