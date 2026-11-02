@@ -1,5 +1,14 @@
 # BlisSTer LLAPI Enhanced changelog
 
+## 2026-11-02 — storage optimization and expanded regression
+
+- Narrow the serial count to its reachable range and size the saturating transaction timer from its timeout limits. Saturation is retained during prolonged WAIT_RELEASE; no wrapping timer is introduced.
+- Decode pending buttons/axes directly from the stable receive buffer, retaining the atomic public-output commit after packet completion.
+- Publish companion fault, payload and timing tests, including a wait longer than the former 21-bit timer range followed by recovery.
+- Preserve API, polling policy, default automatic mode queries, default-disabled command interface/mode writes, MIT license and original credits. No firmware change required.
+- Optional update for existing integrations; verify fit/timing and behavior per core. PSX Single RAM still fails fit at 4197/4191 LABs; no accepted Enhanced RBF or hardware result is claimed.
+- Core-specific menu/autofire/SNAC fixes are not included in this driver. The reported 1944 P2 issue is not claimed fixed.
+
 ## 2026-10-31 — initial foundation
 
 - Added an isolated legacy protocol test; polling, analog status and transition to a digital controller pass simulation.
@@ -27,3 +36,27 @@
 - Added adapter error replies and transport timeout/rejection results. Write completion does not claim device acknowledgement or physical effect.
 - Guarded receive bounds and abort priority, polling subtraction/counter overflow, and full-width neutral disconnect state. Transaction deadlines use engineering limits requiring hardware validation.
 - Added wire-level feature regression configurations and English integration documentation. No firmware, core RBF, independent-motor or hardware-success claim.
+
+## Local follow-up — pressure response faults
+
+- Added all12 incomplete pressure payload lengths, with ordinary input preservation and complete next-reply recovery checks.
+- Fault suite and default feature regression pass. Driver unchanged; tests/docs not yet published.
+- Priority: Enhanced robustness first, then I/O Tester; MT32-Pi deferred and SNAC optional afterward.
+
+## Local follow-up — interrupted rumble parameter writes
+
+- Added two blocked-bus cases between outgoing parameter frames, with single-error completion and no transmissions while blocked.
+- Added nine ENABLE cancellations during opcode/duration/level frames and verified no stale replay.
+- Explicit modeled adapter reset is required by recovery fixtures; physical parser recovery and motor behavior are not established.
+- Driver RTL unchanged. New tests/docs remain local pending publication.
+
+### Local controller mode lifecycle test
+
+TYPE_RECONNECT checks query-once behavior, invalidation on controller replacement, a valid zero modes bitmap, and rediscovery after reconnecting the same controller type. Focused test and default feature regression pass; no RTL change or hardware proof.
+
+### Receive byte synchronization
+
+- Reproduced cumulative byte misalignment with simulated bit times 228 instead of224 clocks. Extended the inter-byte fallback wait and excluded early final-data-bit edges so the real synchronization edge can align each byte.
+- Candidate passed all30 existing regression configurations, plus focused feature and 256-value payload probes at220 and228 clocks per bit. The runner now includes these four probes. These engineering variations do not establish vendor timing tolerance or physical hardware success.
+- RTL published in commit `a318d7ea34d9c618c6780effc04d2faffd75015f`; the public download matches the tested source byte for byte. Companion expanded tests and documentation are awaiting publication.
+- No transmit timing, firmware, or wire command changes. The local I/O Tester copy matches the corrected driver; both affected integration simulations passed, covering dual-driver snapshots, disconnect/reconnect isolation, enable/reset and pin release. Quartus, physical CDC and hardware validation remain pending.

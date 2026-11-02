@@ -1,6 +1,6 @@
 # BlisSTer LLAPI Enhanced
 
-Improving LLAPI integration between MiSTer cores and BlisSTer. The LLAPI protocol is not exclusive to BlisSTer; this project focuses on that hardware and its two LLAPI ports. Status: experimental development, with no published core integration or hardware validation yet.
+Improving LLAPI integration between MiSTer cores and BlisSTer. The LLAPI protocol is not exclusive to BlisSTer; this project focuses on that hardware and its two LLAPI ports. Status: experimental. The earlier driver revision is integrated in the published 1944 Enhanced v0.2.0; the storage optimizations below require validation in each target core. Full hardware validation remains pending.
 
 ## What has improved
 
@@ -14,9 +14,11 @@ Enhanced improves the communication between MiSTer cores and BlisSTer:
 
 These changes use the existing LLAPI protocol and do not introduce a requirement to flash new BlisSTer firmware. Compatibility with real devices still needs physical testing.
 
-The completed simulation runs passed: 30 regression configurations and four additional focused timing/payload configurations were run separately, not as one combined 34-configuration run. The affected two-port I/O Tester integration simulations also passed. Simulation does not prove FPGA timing or real controller behavior.
+The regression runner covers incomplete packets, interrupted command payloads, controller changes, reply timing variation and a prolonged stuck-bus wait. Recovery fixtures that reset the modeled adapter parser do not prove real firmware recovery or motor stop.
 
-**Still to do:** complete FPGA compilation and timing/resource checks, validate the 1942 integration, and test real BlisSTer hardware and controllers. 1942 is the first game pilot for digital inputs and reconnection; it cannot validate analog input, pressure or rumble. No reduction in latency or resource use has been demonstrated. Real motor behavior and independent motor control remain unverified.
+The driver now uses bounded counter widths and decodes the receive buffer without redundant pending button/axis registers. Public outputs still update together only after a complete packet. These changes preserve the existing ports, protocol and default settings; they do not promise a universal FPGA saving or lower latency. The PSX Single RAM candidate still exceeds device capacity (4197 LABs required, 4191 available), so it has no accepted Enhanced RBF or final timing result.
+
+1944 Enhanced v0.2.0 was compiled with positive timing using the earlier driver revision. A user-reported player-two problem remains under investigation; this driver update is not a demonstrated fix. 1943's baseline compilation passed, while additional core features remain separate work. Physical pressure/rumble behavior and firmware recovery are still unverified.
 
 ## Kitrinx's original driver and Enhanced
 
@@ -34,7 +36,7 @@ Kitrinx's driver already provided the essential controller connection: it read b
 | Read replies reliably | Already handled the LLAPI signal and byte timing. | Fixes a reply-alignment issue reproduced with slightly slower simulated replies. |
 | Speed and FPGA size | No matched comparison has been measured. | No faster response or smaller FPGA footprint has been demonstrated. |
 
-This comparison refers to the [preserved Kitrinx driver](reference/SNES_MiSTer-a922e326-llapi.sv), not every LLAPI version or core. Enhanced improvements have been tested in simulation; FPGA timing and real hardware behavior still need validation. Sending a rumble command is not proof that a physical motor works correctly.
+This comparison refers to the [preserved Kitrinx driver](reference/SNES_MiSTer-a922e326-llapi.sv), not every LLAPI version or core. These driver changes are tested in simulation; each core integration needs its own FPGA timing and hardware validation. Sending a rumble command is not proof that a physical motor works correctly.
 
 ## Credits
 
@@ -90,10 +92,14 @@ Each core must expose only SNAC controller types with enough buttons and the cap
 
 ## Distribution
 
-LLAPI Enhanced cores initially belong in `_LLAPI/_Experimental`, with Enhanced identification and hardware/RAM requirements in their names. Filenames do not repeat Experimental. The final 1943/1944 releases use the legacy LLAPI implementation, have been approved through user testing, and remain final.
+Enhanced arcade launchers use `_LLAPI Enhanced/_Arcade` and the name `core-LLAPI-SNAC`; core binaries are stored under `_LLAPI Enhanced/cores`. Releases remain experimental until validated. Hardware/RAM requirements must be explicit where applicable. The final 1943/1944 releases use the legacy LLAPI implementation, have been approved through user testing, and remain final.
 
 ## Progress tracking
 
 Progress, tests and limitations are recorded in [CHANGELOG.md](CHANGELOG.md). Project documentation is maintained in English.
 
-Local additional coverage: `PRESSURE_FAULTS=1` tests all12 nonempty incomplete pressure replies. Each must report timeout with no partial reply, preserve ordinary controller inputs, and recover with all13 bytes correct on the next request. This extends test coverage; no driver change or hardware claim.
+Additional regression coverage: `PRESSURE_FAULTS=1` tests all12 nonempty incomplete pressure replies. Each must report timeout with no partial reply, preserve ordinary controller inputs, and recover with all13 bytes correct on the next request. This extends test coverage; no driver change or hardware claim.
+
+## Updating integrations
+
+The storage optimization is an optional maintenance update for existing cores, not a mandatory protocol or firmware migration. Keep each release pinned to its exact driver commit. Plan and test updates individually: 1944 Enhanced v0.2.0 and the verified 1943 baseline retain the earlier driver; the PSX candidate already contains these optimizations but does not fit. Existing published PSX Diagnostic/Dual builds remain unchanged. Menus, autofire, SNAC routing, controller guides and pause effects belong to the core integration, not this transport driver. Do not add optional FPGA logic to constrained cores without available capacity and passing timing.

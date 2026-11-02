@@ -48,3 +48,15 @@ Wire-level simulation covers automatic modes, unsupported/silent mode queries, a
 The core still has to request/map pressure and rumble explicitly. Independent motor control is not established by these effect commands. SNAC and LLAPI must remain mutually exclusive; this interface does not implement an SNAC wrapper.
 
 Sources: [vendor protocol](https://bliss-box.com/pages/integration) and [public transport parser](https://github.com/ulao/Bliss-Box-LLAPI/blob/abdb246195d5d089b6fd968ebb98aa86ce3c6a70/LLAPI%20open%20source.c). The GPL firmware was inspected as a reference, not copied into the MIT driver.
+
+## Interrupted-write regression
+
+`features_tb.sv` with `PAYLOAD_FAULTS=1` blocks the adapter after the rumble parameter opcode and after its first parameter. It checks one E0 completion, no further frames while blocked, neutral controller outputs and released driver pins.
+
+`RESET_PAYLOAD=1` disables the driver early, halfway and late in each of the three outgoing frames (opcode, duration, level): nine cases. It checks cancellation without DONE, released pins, no automatic replay and a successful fresh request afterward.
+
+Both recovery fixtures explicitly reset the modeled adapter's parameter parser. These results do not demonstrate recovery after a driver-only reset against real firmware retaining a partial command. They also do not prove motor stop or rumble expiration. Those remain physical validation requirements.
+
+## Storage optimization
+
+The serial count is bounded to TIME_WAIT+1. The transaction timer width is derived from the maximum poll/receive-start timeout and saturates at its representable maximum, including while waiting indefinitely for both input lines to release. Packet completion still gates atomic publication of controller type, buttons and axes. External ports and handshake semantics are unchanged.
