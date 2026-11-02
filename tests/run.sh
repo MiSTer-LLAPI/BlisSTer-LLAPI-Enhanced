@@ -45,3 +45,31 @@ vvp "$build/features"
 # A slow controller poll must not be mistaken for a stuck receive lead-in.
 iverilog -g2012 -s features_tb -Pfeatures_tb.POLL_BUSY_TICKS=100000 -o "$build/features" rtl/llapi_enhanced.sv tests/features_tb.sv
 vvp "$build/features"
+
+# All incomplete pressure payload lengths, each followed by a complete reply.
+iverilog -g2012 -s features_tb -Pfeatures_tb.PRESSURE_FAULTS=1 -o "$build/pressure-faults" rtl/llapi_enhanced.sv tests/features_tb.sv
+vvp "$build/pressure-faults"
+
+# Block the adapter between rumble parameter frames; explicitly reset its parser for recovery.
+iverilog -g2012 -s features_tb -Pfeatures_tb.PAYLOAD_FAULTS=1 -o "$build/payload-faults" rtl/llapi_enhanced.sv tests/features_tb.sv
+vvp "$build/payload-faults"
+
+# Disable during each outgoing rumble parameter frame at three bit positions.
+iverilog -g2012 -s features_tb -Pfeatures_tb.RESET_PAYLOAD=1 -o "$build/payload-resets" rtl/llapi_enhanced.sv tests/features_tb.sv
+vvp "$build/payload-resets"
+
+# Modes must be invalidated and rediscovered on controller changes/reconnection.
+iverilog -g2012 -s features_tb -Pfeatures_tb.TYPE_RECONNECT=1 -o "$build/type-reconnect" rtl/llapi_enhanced.sv tests/features_tb.sv
+vvp "$build/type-reconnect"
+
+# Timing variations are engineering probes, not a vendor tolerance guarantee.
+for delta in -2 2; do
+  for patterns in 0 1; do
+    iverilog -g2012 -s features_tb -Pfeatures_tb.RX_DELTA="$delta" -Pfeatures_tb.PATTERN_SWEEP="$patterns" -o "$build/rx" rtl/llapi_enhanced.sv tests/features_tb.sv
+    vvp "$build/rx"
+  done
+done
+
+# Keep the bus quarantined beyond the old 21-bit timer range, then recover.
+iverilog -g2012 -s long_wait_tb -o "$build/long-wait" rtl/llapi_enhanced.sv tests/long_wait_tb.sv
+vvp "$build/long-wait"
