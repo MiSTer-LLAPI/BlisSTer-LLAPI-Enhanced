@@ -1,5 +1,9 @@
 # BlisSTer LLAPI Enhanced changelog
 
+## v0.4.0 — optional immediate re-polling
+
+Enable `IMMEDIATE_REPOLL` per instance to start the next controller poll after a complete report and bus turnaround. Mode discovery and accepted requests take priority. The default retains the previous scheduler for existing integrations. The wire-level regression checks the poll opcode and a 10.0–10.2 µs turnaround window at 50 MHz. See the README for the Contra baseline and the planned 1944 hardware comparison.
+
 ## v0.3.1-dev — optional extension transactions
 
 Adds an opt-in command descriptor with bounded parameter and reply sizes. The core can select a firmware-supported extension opcode at runtime. Ordinary polling and typed commands keep their existing interface and deadlines.
