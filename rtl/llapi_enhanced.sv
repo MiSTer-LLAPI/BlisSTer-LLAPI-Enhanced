@@ -95,7 +95,8 @@
 module LLAPI_Enhanced #(
     parameter bit AUTO_MODES = 1,
     parameter bit COMMAND_INTERFACE = 0,
-    parameter bit ALLOW_MODE_WRITES = 0
+    parameter bit ALLOW_MODE_WRITES = 0,
+    parameter bit RAW_COMMANDS = 0
 )
 (
 	input         CLK_50M,
@@ -115,7 +116,7 @@ module LLAPI_Enhanced #(
     input [15:0] CMD_PAYLOAD, // low byte first: duration, then level for 1C
     output CMD_READY,
     output reg CMD_DONE,
-    output reg [7:0] CMD_ERROR, // 0=transport completed, E0=timeout, E1=rejected
+    output reg [7:0] CMD_ERROR, // 0=completed, E0=timeout, E1=rejected, E2=premature raw reply
     output reg [103:0] CMD_REPLY,
     output reg [3:0] CMD_REPLY_LENGTH,
     output reg MODES_VALID,
@@ -129,7 +130,12 @@ module LLAPI_Enhanced #(
     // Pulse with the new complete snapshot on a direct valid-to-valid ID change.
     output reg TYPE_CHANGED,
     // Persists through successful reports and rediscovery until this port is disabled.
-    output reg [1:0] LAST_FAULT_REASON
+    output reg [1:0] LAST_FAULT_REASON,
+    // Extension command descriptor, sampled with CMD_VALID && CMD_READY.
+    input CMD_RAW,
+    input [4:0] CMD_TX_LENGTH,
+    input [3:0] CMD_RX_LENGTH,
+    input [191:0] CMD_TX_DATA
 );
 
 // Commands
@@ -199,7 +205,9 @@ logic [20:0]  cycle, poll_offset, poll_counter, poll_offset_latch, sync_counter;
 // count reaches at most TIME_WAIT+1=501; larger values reset before increment commits.
 localparam integer COUNT_WIDTH = $clog2(TIME_WAIT + 2);
 logic [COUNT_WIDTH-1:0] count;
-logic [31:0]  write_buffer;
+localparam bit RAW_ENABLED = COMMAND_INTERFACE && RAW_COMMANDS;
+localparam integer WRITE_BITS = RAW_ENABLED ? 200 : 32;
+logic [WRITE_BITS-1:0] write_buffer;
 logic [3:0]   write_length;
 logic [2:0]   read_bit; // Relies on overflow
 logic [3:0]   read_byte;
@@ -207,7 +215,11 @@ logic [7:0]   read_buffer[13];
 logic [3:0]   read_length;
 
 logic modes_attempted, command_busy, command_slot;
-logic [1:0] payload_remaining;
+localparam integer PAYLOAD_COUNT_BITS = RAW_ENABLED ? 5 : 2;
+logic [PAYLOAD_COUNT_BITS-1:0] payload_remaining;
+wire request_raw = RAW_ENABLED && CMD_RAW;
+logic raw_selected;
+wire raw_active = RAW_ENABLED && command_busy && raw_selected;
 logic [7:0] active_opcode;
 localparam integer TRANSACTION_LIMIT = TIME_POLL > RECEIVE_START_TIMEOUT ? TIME_POLL : RECEIVE_START_TIMEOUT;
 localparam integer TRANSACTION_WIDTH = $clog2(TRANSACTION_LIMIT + 1);
@@ -217,6 +229,10 @@ function automatic valid_command(input [7:0] op);
         op == 8'h14 || op == 8'h18 || op == 8'h1a || op == 8'h1b || op == 8'h1c ||
         (ALLOW_MODE_WRITES && op == 8'h20);
 endfunction
+// The built-in scheduler owns poll/status; mode writes retain their typed opt-in.
+wire extension_valid = CMD_OPCODE > 8'h01 && CMD_OPCODE != 8'h20 &&
+    !valid_command(CMD_OPCODE) && CMD_TX_LENGTH <= 24 && CMD_RX_LENGTH <= 13;
+
 function automatic protocol_error(input [7:0] v);
     protocol_error = v == 8'hf1 || v == 8'hfe || v == 8'hff;
 endfunction
@@ -268,7 +284,8 @@ execution_state state = STATE_IDLE;
 wire auxiliary = command_busy || stage == READ_MODES;
 wire transaction_active = state != STATE_WAIT_RELEASE && (stage != READ_IDLE || state != STATE_IDLE);
 wire watchdog_expired = transaction_active &&
-    transaction_timer >= ((stage == READ_POLL) ? TIME_POLL : RECEIVE_START_TIMEOUT);
+    transaction_timer >= ((stage == READ_POLL || raw_active) ? TIME_POLL : RECEIVE_START_TIMEOUT);
+wire premature_reply = raw_active && state == STATE_IDLE && stage == WRITE_PAYLOAD && is_latched;
 wire poll_due = sync_counter >= ((enable && poll_time > TIME_BUFFER &&
     poll_offset < poll_time - TIME_BUFFER) ? poll_time - poll_offset : poll_time);
 assign CMD_READY = COMMAND_INTERFACE && ENABLE && enable && command_slot &&
@@ -326,13 +343,18 @@ always_ff @(posedge CLK_50M) begin
 		if (poll_offset != 21'h1fffff) poll_offset <= poll_offset + 1'b1;
 
     // The deadline wins the entire clock, including status and auxiliary reply publication.
-    if (watchdog_expired) begin
+    if (watchdog_expired || premature_reply) begin
         if (is_latched || !data_in) state <= STATE_WAIT_RELEASE; else state <= STATE_IDLE;
         stage <= READ_IDLE; cycle <= 0; count <= 0; transaction_timer <= 0;
         latch <= 0; data_out <= 1; packet_complete <= 0; payload_remaining <= 0;
         LINK_FAULT <= 1;
         LAST_FAULT_REASON <= (state == STATE_READ || state == STATE_READ_WAIT) ? 2'd3 : 2'd1;
-        if (command_busy) begin CMD_DONE <= 1; CMD_ERROR <= 8'he0; command_busy <= 0; end
+        if (premature_reply && !watchdog_expired) LAST_FAULT_REASON <= 2'd2;
+        if (command_busy) begin
+            CMD_DONE <= 1;
+            CMD_ERROR <= watchdog_expired ? 8'he0 : 8'he2;
+            command_busy <= 0;
+        end
         if (!auxiliary || is_latched || !data_in) begin
             enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
             lljs_analog <= 72'h080000808080808080;
@@ -353,12 +375,12 @@ always_ff @(posedge CLK_50M) begin
                 end
             end else if (CMD_READY && CMD_VALID) begin
                 command_slot <= 0; CMD_ERROR <= 0; CMD_REPLY <= 0; CMD_REPLY_LENGTH <= 0;
-                if (!valid_command(CMD_OPCODE)) begin CMD_DONE <= 1; CMD_ERROR <= 8'he1; end
+                if (!(request_raw ? extension_valid : valid_command(CMD_OPCODE))) begin CMD_DONE <= 1; CMD_ERROR <= 8'he1; end
                 else begin
-                    command_busy <= 1; active_opcode <= CMD_OPCODE;
-                    write_buffer <= {8'd0, CMD_PAYLOAD, CMD_OPCODE};
-                    payload_remaining <= CMD_OPCODE == 8'h1c ? 2 : (CMD_OPCODE == 8'h20 ? 1 : 0);
-                    read_length <= CMD_OPCODE == 8'h02 ? 13 : (CMD_OPCODE == 8'h21 ? 1 : 0);
+                    command_busy <= 1; active_opcode <= CMD_OPCODE; raw_selected <= request_raw;
+                    write_buffer <= request_raw ? {CMD_TX_DATA, CMD_OPCODE} : {CMD_PAYLOAD, CMD_OPCODE};
+                    payload_remaining <= request_raw ? CMD_TX_LENGTH : CMD_OPCODE == 8'h1c ? 2 : (CMD_OPCODE == 8'h20 ? 1 : 0);
+                    read_length <= request_raw ? CMD_RX_LENGTH : CMD_OPCODE == 8'h02 ? 13 : (CMD_OPCODE == 8'h21 ? 1 : 0);
                     stage <= READ_COMMAND; state <= STATE_WRITE_START;
                     cycle <= 0; transaction_timer <= 0;
                 end
@@ -423,7 +445,7 @@ always_ff @(posedge CLK_50M) begin
 				data_out <= 1'b1;
 			end else if (cycle == TIME_BIT_H) begin // data half-bit
 				data_out <= ~write_buffer[0];
-				write_buffer <= {1'b0, write_buffer[31:1]};
+				write_buffer <= write_buffer >> 1;
 			end else if (cycle >= (TIME_BIT_R + TIME_BIT_H)) begin
 				write_length <= write_length - 1'b1;
 				cycle <= 0;
@@ -451,7 +473,7 @@ always_ff @(posedge CLK_50M) begin
         end
 
         STATE_READ_START: begin
-            if (cycle >= ((stage == READ_POLL) ? TIME_POLL : RECEIVE_START_TIMEOUT)) begin
+            if (cycle >= ((stage == READ_POLL || raw_active) ? TIME_POLL : RECEIVE_START_TIMEOUT)) begin
                 // Discard this transaction and wait for both input lines to release.
                 // Never repeatedly transmit into a device holding the bus low.
                 state <= STATE_WAIT_RELEASE;
@@ -525,7 +547,7 @@ always_ff @(posedge CLK_50M) begin
 					end
 					poll_offset_latch <= poll_offset < (21'h1fffff - TIME_BUFFER) ? poll_offset + TIME_BUFFER : 21'h1fffff;
 					read_byte <= read_byte + 1'd1;
-                    if (read_byte == 0 && stage != READ_MODES && protocol_error(read_buffer[0])) read_length <= 1;
+                    if (!raw_active && read_byte == 0 && stage != READ_MODES && protocol_error(read_buffer[0])) read_length <= 1;
 					state <= STATE_READ_WAIT;
 				end
 			end
@@ -585,7 +607,7 @@ always_ff @(posedge CLK_50M) begin
                     CMD_REPLY_LENGTH <= read_byte;
                     for (integer n=0; n<13; n=n+1)
                         if (n < read_byte) CMD_REPLY[n*8 +: 8] <= read_buffer[n];
-                    if (read_byte == 1 && protocol_error(read_buffer[0])) CMD_ERROR <= read_buffer[0];
+                    if (!raw_active && read_byte == 1 && protocol_error(read_buffer[0])) CMD_ERROR <= read_buffer[0];
                 end
                 cycle <= 0;
                 state <= STATE_IDLE;
@@ -605,7 +627,7 @@ always_ff @(posedge CLK_50M) begin
         STATUS_UPDATE <= 0; TYPE_CHANGED <= 0; LINK_FAULT <= 0; LAST_FAULT_REASON <= 0;
         // ENABLE low resets transaction/synchronization state deterministically.
         modes_attempted <= 0; MODES_VALID <= 0; command_busy <= 0; command_slot <= 0;
-        payload_remaining <= 0; active_opcode <= 0; transaction_timer <= 0;
+        raw_selected <= 0; payload_remaining <= 0; active_opcode <= 0; transaction_timer <= 0;
         CMD_DONE <= 0; CMD_ERROR <= 0; CMD_REPLY <= 0; CMD_REPLY_LENGTH <= 0;
         pending_type <= 0;   packet_complete <= 0;
         cycle <= 0; count <= 0; poll_offset <= 0; poll_counter <= 0;
