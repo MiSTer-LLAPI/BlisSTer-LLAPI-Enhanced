@@ -2,6 +2,14 @@
 
 Historical tags alpha.1–alpha.4 are assigned retrospectively on 2026-11-02 to actual immutable commit snapshots. They were not numbered releases on their original development dates. v0.1.0 was already published and is preserved unchanged. All are experimental source releases, not core/RBF releases.
 
+## Driver v0.5.0 — immediate polling under contention and recovery
+
+A pending auxiliary command can use its post-report slot even when the frame-based poll is due. If the data line stays low before the next poll, the transaction watchdog invalidates the stale report and waits for bus release. Simulations cover mode discovery followed by pressure and resumed polling, plus recovery from a blocked line through a fresh report.
+
+## v0.4.0 — optional immediate re-polling
+
+Enable `IMMEDIATE_REPOLL` per instance to start the next controller poll after a complete report and bus turnaround. Mode discovery and accepted requests take priority. The default retains the previous scheduler for existing integrations. The wire-level regression checks the poll opcode and a 10.0–10.2 µs turnaround window at 50 MHz. See the README for the Contra baseline and the planned 1944 hardware comparison.
+
 ## Version index
 
 | Version | Snapshot commit | Main difference |
