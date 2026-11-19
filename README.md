@@ -8,6 +8,8 @@ A pending auxiliary command can use its post-report slot even when the frame-bas
 
 ## Driver v0.4.0
 
+**1944 Enhanced:** Immediate Repoll is always **On** in the original 1944 test build with driver v0.5.0. In the Enhanced Core 1.0 integration it defaults to **On** for both LLAPI ports. To switch to frame-based polling, select **Off** under **Controller Guide → Immediate Repoll**. This option appears when the serial port is set to **LLAPI 2P**. SNAC uses its own protocol.
+
 A core can enable `IMMEDIATE_REPOLL=1` independently on each port. After publishing a complete controller report from Get Data (`0x01`), the driver starts the next Poll (`0x00`) as soon as the bus turnaround permits. The adapter can then sample the controller while the core uses the last complete report. Automatic mode discovery and accepted commands retain access to the bus. The default value of zero preserves frame-based scheduling for existing cores and provides a reference for comparison.
 
 ### How the driver evolved
