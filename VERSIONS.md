@@ -145,3 +145,7 @@ reason to each port. Cores can use the event to discard per-controller input
 state on a swap. Named-port users may omit both outputs. See the
 [signal definitions](README.md#v030-dev--controller-changes-and-per-port-fault-history).
 RTL SHA-256: `01a64fc4adf2d31b975ef9219c731ab0fd84ec59cc79cefe1b980541349ebe26`.
+
+## v0.3.1-dev (development candidate)
+
+Optional extension commands. RTL SHA-256: `e539604cf1107adea9106593d8881d55110f32b33af44b90876cd73ddfe6e0db`.

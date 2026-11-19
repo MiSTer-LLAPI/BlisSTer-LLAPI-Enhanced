@@ -2,6 +2,10 @@
 
 A compact, robust LLAPI driver for MiSTer, with coherent controller readings, bounded communication recovery and optional interfaces for pressure and rumble. The project supports integrations using two independent LLAPI ports and the official MiSTer Main.
 
+## Optional extension commands
+
+A core can submit a firmware-supported extension opcode with up to 24 parameter bytes and request up to 13 reply bytes. The driver captures the request, sends the bytes using the existing LLAPI timing, and resumes controller polling. Enable this per port at synthesis time. See [the command interface and a quick-states example](TRANSACTIONS.md#extension-commands-v031-dev-candidate). Physical validation of this interface is pending.
+
 ## What changed in the Enhanced cores?
 
 With v0.3.0-dev, a core can tell when one port reports a different controller type between two complete reads. In a two-player simulation, P1 switched from SNES to PSX DualShock while holding autofire. The core stopped P1’s autofire until the button was released and pressed again. P2 kept firing at the same rate and could press and release Jump throughout the swap. Each port also remembers its most recent communication fault after the connection recovers.
@@ -12,7 +16,7 @@ The [Contra build](https://github.com/MiSTer-LLAPI/jtcores/actions/runs/44514130
 
 ## Versions
 
-Current development source: **v0.3.0-dev**. Latest tagged release: [v0.1.0](https://github.com/MiSTer-LLAPI/BlisSTer-LLAPI-Enhanced/releases/tag/v0.1.0).
+Current development source: **v0.3.1-dev**. Latest tagged release: [v0.1.0](https://github.com/MiSTer-LLAPI/BlisSTer-LLAPI-Enhanced/releases/tag/v0.1.0).
 
 See [CHANGELOG.md](CHANGELOG.md) for changes and [VERSIONS.md](VERSIONS.md) for version history. Driver versions are independent of core release numbers. Each core release records its exact driver revision and file hash.
 
@@ -50,7 +54,7 @@ Adds optional `FAULT_REASON[1:0]`, valid only during `LINK_FAULT`:
 |---|---|
 | 0 | No fault event on this cycle |
 | 1 | Poll/start/general transaction timeout |
-| 2 | Rejected status response (protocol error or complete type-zero status) |
+| 2 | Rejected status response (protocol error or complete type-zero status), or a premature reply to a raw command in v0.3.1-dev |
 | 3 | Transaction watchdog expired during receive/byte-wait phase |
 
 The code describes the detected condition, not its physical cause. A truncated reply can lead to code 1 or 3 depending on where reception stopped; neither proves unplug. Intentional `ENABLE=0` clears both event and reason. Capture the reason with the fault pulse in `CLK_50M`; use a safe event/mailbox transfer across clock domains.

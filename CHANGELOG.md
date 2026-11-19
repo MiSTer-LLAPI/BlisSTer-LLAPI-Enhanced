@@ -1,5 +1,9 @@
 # BlisSTer LLAPI Enhanced changelog
 
+## v0.3.1-dev — optional extension transactions
+
+Adds an opt-in command descriptor with bounded parameter and reply sizes. The core can select a firmware-supported extension opcode at runtime. Ordinary polling and typed commands keep their existing interface and deadlines.
+
 ## v0.3.0-dev — controller changes and per-port fault history
 
 Each driver instance publishes `TYPE_CHANGED` for one 50 MHz clock alongside
