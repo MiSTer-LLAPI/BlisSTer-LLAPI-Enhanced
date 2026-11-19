@@ -12,12 +12,18 @@ module features_tb;
  reg clk=0,en=0,sync=0,li=1,di=1,valid=0;
  reg [7:0] op=0;reg [15:0] payload=0;
  wire lo,dout,active,ready,done,mvalid,status_valid,status_update,link_fault;
- wire[1:0] fault_reason;
+ wire type_changed;
+ wire[1:0] fault_reason, last_fault_reason;
+ integer type_changes=0;
  integer updates=0,faults=0;
  reg previous_update=0,previous_fault=0;
  wire [7:0] kind,modes,err;wire[31:0] buttons;wire[71:0] analog_data;
  wire[103:0] reply;wire[3:0] length;
  always @(negedge clk) begin
+  if(type_changed) begin
+   if(!status_update || !status_valid) $fatal(1,"controller change without valid publication");
+   type_changes=type_changes+1;
+  end
   if(status_update && previous_update) $fatal(1,"status pulse longer than one cycle");
   if(link_fault && previous_fault) $fatal(1,"fault pulse longer than one cycle");
   previous_update=status_update; previous_fault=link_fault;
@@ -35,7 +41,8 @@ module features_tb;
  .IO_LATCH_OUT(lo),.IO_DATA_OUT(dout),.LLAPI_EN(active),.LLAPI_TYPE(kind),
  .LLAPI_MODES(modes),.LLAPI_BUTTONS(buttons),.LLAPI_ANALOG(analog_data),
  .CMD_VALID(valid),.CMD_OPCODE(op),.CMD_PAYLOAD(payload),.CMD_READY(ready),
- .CMD_DONE(done),.CMD_ERROR(err),.CMD_REPLY(reply),.CMD_REPLY_LENGTH(length),.MODES_VALID(mvalid),.STATUS_VALID(status_valid),.STATUS_UPDATE(status_update),.LINK_FAULT(link_fault),.FAULT_REASON(fault_reason));
+ .CMD_DONE(done),.CMD_ERROR(err),.CMD_REPLY(reply),.CMD_REPLY_LENGTH(length),.MODES_VALID(mvalid),.STATUS_VALID(status_valid),.STATUS_UPDATE(status_update),.LINK_FAULT(link_fault),.FAULT_REASON(fault_reason),
+ .TYPE_CHANGED(type_changed),.LAST_FAULT_REASON(last_fault_reason));
  integer polls=0,statuses=0,queries=0,remaining=0,params=0,commands=0;
  reg [7:0] command,parameter_bytes[0:2];reg [7:0] bytes[0:12];
  reg [7:0] controller_type=11;
@@ -125,10 +132,12 @@ module features_tb;
    query_before=queries;before_status=statuses;
    wait(statuses>=before_status+2);wait(ready);
    if(queries!=query_before)$fatal(1,"modes queried repeatedly without change");
+   if(type_changes!=0) $fatal(1,"initial detection or repeated ID treated as a swap");
    controller_type=65;mode_response=0;
    wait(kind==65);
    if(mvalid || modes!==0)$fatal(1,"old modes leaked across controller type change");
    wait(ready);
+   if(type_changes!=1) $fatal(1,"direct type change did not produce exactly one event");
    if(queries!=query_before+1 || !mvalid || modes!==0)
     $fatal(1,"new controller modes not refreshed");
    if(buttons[27:24]!==0)$fatal(1,"previous analog dpad mode leaked");
@@ -142,6 +151,7 @@ module features_tb;
     $fatal(1,"same-type reconnect did not rediscover modes");
    before_status=statuses;wait(statuses>before_status);wait(ready);
    if(buttons[27:24]!==4'b0110)$fatal(1,"reconnected modes not applied");
+   if(type_changes!=1 || last_fault_reason!==2) $fatal(1,"recovery generated a swap or lost last rejection");
    $display("PASS type/modes reconnect: one query per connection/type, invalidation on swap, zero bitmap valid, same-type reconnect refresh and mode application");
    $finish;
   end

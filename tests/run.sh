@@ -80,3 +80,11 @@ vvp "$build/fault-reason"
 # Existing public outputs must stay identical across same-type reconnect.
 iverilog -g2012 -s features_tb -Pfeatures_tb.TYPE_RECONNECT=1 -o "$build/equivalence" rtl/llapi_enhanced.sv tests/baseline_v020.sv tests/equivalence_v021_tb.sv
 vvp "$build/equivalence"
+
+# Cold power-up and reviewed transaction, recovery and identity boundaries.
+for fixture in cold_start_tb watchdog_boundary_tb poll_overlap_tb manual_modes_swap_tb; do
+    iverilog -g2012 -s "$fixture" -o "$build/$fixture" rtl/llapi_enhanced.sv "tests/$fixture.sv"
+    vvp "$build/$fixture"
+done
+iverilog -g2012 -s poll_overlap_tb -Ppoll_overlap_tb.AUTO_MODES=0 -o "$build/manual-poll" rtl/llapi_enhanced.sv tests/poll_overlap_tb.sv
+vvp "$build/manual-poll"

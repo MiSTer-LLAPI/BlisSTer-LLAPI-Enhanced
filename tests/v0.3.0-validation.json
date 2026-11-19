@@ -1,0 +1,49 @@
+{
+  "version": "v0.3.0-dev",
+  "rtl_sha256": "01a64fc4adf2d31b975ef9219c731ab0fd84ec59cc79cefe1b980541349ebe26",
+  "test_runner": "sh tests/run.sh",
+  "regression_pass_lines": 42,
+  "exit_code": 0,
+  "new_checks": [
+    "Only a direct replacement of a valid type produces TYPE_CHANGED, coincident with a complete valid publication.",
+    "Initial detection, repeated type and reconnection after a loss do not produce TYPE_CHANGED.",
+    "Last fault agrees with pulse reason, persists through recovery, is replaced by a later fault and clears on port disable."
+  ],
+  "hardware_validation": "pending",
+  "review_baseline_sha256": "2805e8b21aeaa3160eeab8733bd817b664e68efc866f56ffaa2f513cedb439f7",
+  "simulator": "Icarus Verilog 13.0",
+  "review_failures_before_fix": {
+    "cold_start_tb": [
+      "FATAL: tests/cold_start_tb.sv:17: Port was not initialized after first enabled clock"
+    ],
+    "manual_modes_swap_tb": [
+      "FATAL: tests/manual_modes_swap_tb.sv:117: direct type change retained previous manual modes: valid=1 modes=80"
+    ],
+    "poll_overlap_tb": [
+      "FATAL: tests/poll_overlap_tb.sv:32: ordinary snapshot lost during poll overlap",
+      "FATAL: tests/poll_overlap_tb.sv:94: poll interrupted the outstanding auxiliary reply"
+    ],
+    "watchdog_boundary_tb": [
+      "FAIL finished status must not time out on the next idle clock",
+      "FAIL status at deadline must report only the timeout",
+      "FAIL expired command must not publish mode or reply data",
+      "FAIL releasing the same stall must not raise a second timeout",
+      "FATAL: tests/watchdog_boundary_tb.sv:110: 4 watchdog boundary checks failed"
+    ]
+  },
+  "integration_simulation": [
+    "PASS direct SNES to PSX swap clears P1 HOLD; release and repress rearms; next release stops only P1",
+    "PASS direct SNES to PSX swap clears P1 toggle; held replacement needs release and repress; P2 input, connection and autofire continuous",
+    "PASS P1 rejected status latched through recovery and OSD, independent of P2"
+  ],
+  "two_port_retest": {
+    "date": "2026-11-19",
+    "runner_from_workspace": "sh work/1943-enhanced/v090-candidate/tests/llapi/run_direct_swap.sh work/llapi-next/rtl/llapi_enhanced.sv",
+    "fixture_sha256": "8d6bb2235716ec6e93fad6df7be6049f1c735d984ca614171c7ba1b0fa666082",
+    "ports": "Two simulated adapters at the USER pins. P1 changes directly from SNES (0x1b) to PSX DualShock (0x73) with the dedicated button held. P2 stays on SNES.",
+    "p1_modes": ["HOLD", "TOGGLE"],
+    "p2_checks": "P2 stays connected, accepts a second button press and release, and preserves its independently predicted autofire phase on every game clock across the swap.",
+    "negative_control": "A temporary simulation copy that also cleared P2 on the P1 swap failed the P2 phase check on frame 6.",
+    "exit_code": 0
+  }
+}
