@@ -94,3 +94,6 @@ iverilog -g2012 -s raw_commands_tb -o "$build/raw" rtl/llapi_enhanced.sv tests/r
 vvp "$build/raw"
 iverilog -g2012 -s raw_commands_tb -Praw_commands_tb.RAW_COMMANDS=0 -o "$build/raw-off" rtl/llapi_enhanced.sv tests/raw_commands_tb.sv
 vvp "$build/raw-off"
+
+iverilog -g2012 -s immediate_repoll_tb -o "$build/repoll" rtl/llapi_enhanced.sv tests/immediate_repoll_tb.sv
+vvp "$build/repoll"
