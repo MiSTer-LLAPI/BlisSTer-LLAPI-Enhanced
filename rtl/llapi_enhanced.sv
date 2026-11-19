@@ -96,7 +96,8 @@ module LLAPI_Enhanced #(
     parameter bit AUTO_MODES = 1,
     parameter bit COMMAND_INTERFACE = 0,
     parameter bit ALLOW_MODE_WRITES = 0,
-    parameter bit RAW_COMMANDS = 0
+    parameter bit RAW_COMMANDS = 0,
+    parameter bit IMMEDIATE_REPOLL = 0
 )
 (
 	input         CLK_50M,
@@ -214,6 +215,7 @@ logic [3:0]   read_byte;
 logic [7:0]   read_buffer[13];
 logic [3:0]   read_length;
 
+logic repoll_pending;
 logic modes_attempted, command_busy, command_slot;
 localparam integer PAYLOAD_COUNT_BITS = RAW_ENABLED ? 5 : 2;
 logic [PAYLOAD_COUNT_BITS-1:0] payload_remaining;
@@ -282,7 +284,8 @@ execution_stage stage = READ_IDLE;
 execution_state state = STATE_IDLE;
 
 wire auxiliary = command_busy || stage == READ_MODES;
-wire transaction_active = state != STATE_WAIT_RELEASE && (stage != READ_IDLE || state != STATE_IDLE);
+wire repoll_due = IMMEDIATE_REPOLL && repoll_pending && stage == READ_IDLE;
+wire transaction_active = state != STATE_WAIT_RELEASE && (stage != READ_IDLE || state != STATE_IDLE || repoll_due);
 wire watchdog_expired = transaction_active &&
     transaction_timer >= ((stage == READ_POLL || raw_active) ? TIME_POLL : RECEIVE_START_TIMEOUT);
 wire premature_reply = raw_active && state == STATE_IDLE && stage == WRITE_PAYLOAD && is_latched;
@@ -290,7 +293,7 @@ wire poll_due = sync_counter >= ((enable && poll_time > TIME_BUFFER &&
     poll_offset < poll_time - TIME_BUFFER) ? poll_time - poll_offset : poll_time);
 assign CMD_READY = COMMAND_INTERFACE && ENABLE && enable && command_slot &&
     !command_busy && stage == READ_IDLE && state == STATE_IDLE &&
-    !is_latched && data_in && !poll_due && cycle > TIME_WAIT;
+    !is_latched && data_in && (!poll_due || repoll_due) && cycle > TIME_WAIT;
 assign LLAPI_TYPE = lljs_type;
 assign LLAPI_BUTTONS = lljs_buttons;
 assign LLAPI_ANALOG = lljs_analog;
@@ -344,6 +347,7 @@ always_ff @(posedge CLK_50M) begin
 
     // The deadline wins the entire clock, including status and auxiliary reply publication.
     if (watchdog_expired || premature_reply) begin
+        repoll_pending <= 0;
         if (is_latched || !data_in) state <= STATE_WAIT_RELEASE; else state <= STATE_IDLE;
         stage <= READ_IDLE; cycle <= 0; count <= 0; transaction_timer <= 0;
         latch <= 0; data_out <= 1; packet_complete <= 0; payload_remaining <= 0;
@@ -400,9 +404,11 @@ always_ff @(posedge CLK_50M) begin
 					state <= STATE_WRITE_START;
 					write_buffer <= {24'd0, LLAPI_GET_MODES};
 				end
-			end else if (poll_due && !auxiliary) begin // Let an accepted auxiliary transaction finish or time out.
+			end else if (repoll_due || (poll_due && !auxiliary)) begin // Let an accepted auxiliary transaction finish or time out.
 				count <= count + 1'b1;
-				if (count > TIME_WAIT) begin
+				if (repoll_due ?
+                    (cycle > TIME_WAIT && data_in) : count > TIME_WAIT) begin
+                    repoll_pending <= 0;
 					if (stage != READ_IDLE) begin // IO timeout, device disconnect/defunct
 						enable <= 1'b0; LINK_FAULT <= 1; LAST_FAULT_REASON <= 2'd1;
 						poll_offset <= 0;
@@ -573,6 +579,7 @@ always_ff @(posedge CLK_50M) begin
                 // Publish type, buttons and all axes together after a complete packet.
                 if (stage == READ_STATUS && packet_complete && pending_type != 0 && !protocol_error(pending_type)) begin
                     STATUS_UPDATE <= 1;
+                    repoll_pending <= IMMEDIATE_REPOLL;
                     TYPE_CHANGED <= STATUS_VALID && pending_type != lljs_type;
                     command_slot <= 1;
                     lljs_type <= pending_type;
@@ -626,6 +633,7 @@ always_ff @(posedge CLK_50M) begin
         // Intentional disable is not a communication fault.
         STATUS_UPDATE <= 0; TYPE_CHANGED <= 0; LINK_FAULT <= 0; LAST_FAULT_REASON <= 0;
         // ENABLE low resets transaction/synchronization state deterministically.
+        repoll_pending <= 0;
         modes_attempted <= 0; MODES_VALID <= 0; command_busy <= 0; command_slot <= 0;
         raw_selected <= 0; payload_remaining <= 0; active_opcode <= 0; transaction_timer <= 0;
         CMD_DONE <= 0; CMD_ERROR <= 0; CMD_REPLY <= 0; CMD_REPLY_LENGTH <= 0;
