@@ -1,0 +1,17 @@
+{
+  "version": "v0.3.1-dev",
+  "base_commit": "b5b66bbbc4150d5ba480552bcc162f79077accaf",
+  "rtl_sha256": "e539604cf1107adea9106593d8881d55110f32b33af44b90876cd73ddfe6e0db",
+  "simulator": "Icarus Verilog 13.0",
+  "test_runner": "sh tests/run.sh",
+  "regression_pass_lines": 44,
+  "exit_code": 0,
+  "extension_checks": [
+    "GET_QUICK_STATES scripted one-byte replies",
+    "24 ordered mapper parameter bytes, no firmware emulation or acknowledgement",
+    "opaque 13-byte reply after 24-byte transmit",
+    "protected opcodes, invalid lengths and default-off behavior",
+    "early reply with zero or one byte requested, timeout and polling recovery"
+  ],
+  "hardware_validation": "pending for extension commands"
+}

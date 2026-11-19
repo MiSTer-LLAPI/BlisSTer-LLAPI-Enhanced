@@ -88,3 +88,9 @@ for fixture in cold_start_tb watchdog_boundary_tb poll_overlap_tb manual_modes_s
 done
 iverilog -g2012 -s poll_overlap_tb -Ppoll_overlap_tb.AUTO_MODES=0 -o "$build/manual-poll" rtl/llapi_enhanced.sv tests/poll_overlap_tb.sv
 vvp "$build/manual-poll"
+
+# Decode extension transactions at the simulated adapter pins.
+iverilog -g2012 -s raw_commands_tb -o "$build/raw" rtl/llapi_enhanced.sv tests/raw_commands_tb.sv
+vvp "$build/raw"
+iverilog -g2012 -s raw_commands_tb -Praw_commands_tb.RAW_COMMANDS=0 -o "$build/raw-off" rtl/llapi_enhanced.sv tests/raw_commands_tb.sv
+vvp "$build/raw-off"
