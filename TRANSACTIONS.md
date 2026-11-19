@@ -59,4 +59,4 @@ Both recovery fixtures explicitly reset the modeled adapter's parameter parser. 
 
 ## Storage optimization
 
-The serial count is bounded to TIME_WAIT+1. The transaction timer width is derived from the maximum poll/receive-start timeout and saturates at its representable maximum, including while waiting indefinitely for both input lines to release. Packet completion still gates atomic publication of controller type, buttons and axes. External ports and handshake semantics are unchanged.
+The serial count is bounded to TIME_WAIT+1. The transaction timer width is derived from the maximum poll/receive-start timeout and counts only active transactions. The timer resets while idle or waiting for both lines to release. At the deadline the watchdog takes priority over reply publication. Packet completion still gates atomic publication of controller type, buttons and axes. External ports and handshake semantics are unchanged.

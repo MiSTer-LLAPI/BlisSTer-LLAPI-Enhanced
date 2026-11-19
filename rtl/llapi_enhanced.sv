@@ -125,7 +125,11 @@ module LLAPI_Enhanced #(
     output reg STATUS_UPDATE,
     output reg LINK_FAULT,
     // Valid only with LINK_FAULT: 1 timeout, 2 rejected status, 3 receive-phase watchdog.
-    output reg [1:0] FAULT_REASON
+    output [1:0] FAULT_REASON,
+    // Pulse with the new complete snapshot on a direct valid-to-valid ID change.
+    output reg TYPE_CHANGED,
+    // Persists through successful reports and rediscovery until this port is disabled.
+    output reg [1:0] LAST_FAULT_REASON
 );
 
 // Commands
@@ -262,6 +266,9 @@ execution_stage stage = READ_IDLE;
 execution_state state = STATE_IDLE;
 
 wire auxiliary = command_busy || stage == READ_MODES;
+wire transaction_active = state != STATE_WAIT_RELEASE && (stage != READ_IDLE || state != STATE_IDLE);
+wire watchdog_expired = transaction_active &&
+    transaction_timer >= ((stage == READ_POLL) ? TIME_POLL : RECEIVE_START_TIMEOUT);
 wire poll_due = sync_counter >= ((enable && poll_time > TIME_BUFFER &&
     poll_offset < poll_time - TIME_BUFFER) ? poll_time - poll_offset : poll_time);
 assign CMD_READY = COMMAND_INTERFACE && ENABLE && enable && command_slot &&
@@ -275,6 +282,8 @@ assign LLAPI_EN = enable;
 // Reuse existing snapshot identity and link state: no extra validity register.
 assign STATUS_VALID = ENABLE && enable && lljs_type != 0 && !protocol_error(lljs_type);
 
+assign FAULT_REASON = LINK_FAULT ? LAST_FAULT_REASON : 2'd0;
+
 always_comb begin
 	if (latch) begin
 		IO_LATCH_OUT = 1'b0;
@@ -285,10 +294,13 @@ always_comb begin
 	end
 end
 
+// Use the regular synchronous disable path on the first clock after FPGA configuration.
+logic startup_complete = 1'b0;
 always_ff @(posedge CLK_50M) begin
-	if (ENABLE) begin
-    CMD_DONE <= 0; STATUS_UPDATE <= 0; LINK_FAULT <= 0; FAULT_REASON <= 0;
-    if (stage != READ_IDLE || state != STATE_IDLE) begin
+    startup_complete <= 1'b1;
+    if (ENABLE && startup_complete) begin
+    CMD_DONE <= 0; STATUS_UPDATE <= 0; TYPE_CHANGED <= 0; LINK_FAULT <= 0;
+    if (transaction_active) begin
         if (transaction_timer != {TRANSACTION_WIDTH{1'b1}}) transaction_timer <= transaction_timer + 1'b1;
     end else transaction_timer <= 0;
 	old_sync <= new_sync;
@@ -313,7 +325,20 @@ always_ff @(posedge CLK_50M) begin
 	if (stage == READ_POLL || stage == READ_STATUS)
 		if (poll_offset != 21'h1fffff) poll_offset <= poll_offset + 1'b1;
 
-	case (state)
+    // The deadline wins the entire clock, including status and auxiliary reply publication.
+    if (watchdog_expired) begin
+        if (is_latched || !data_in) state <= STATE_WAIT_RELEASE; else state <= STATE_IDLE;
+        stage <= READ_IDLE; cycle <= 0; count <= 0; transaction_timer <= 0;
+        latch <= 0; data_out <= 1; packet_complete <= 0; payload_remaining <= 0;
+        LINK_FAULT <= 1;
+        LAST_FAULT_REASON <= (state == STATE_READ || state == STATE_READ_WAIT) ? 2'd3 : 2'd1;
+        if (command_busy) begin CMD_DONE <= 1; CMD_ERROR <= 8'he0; command_busy <= 0; end
+        if (!auxiliary || is_latched || !data_in) begin
+            enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
+            lljs_analog <= 72'h080000808080808080;
+            lljs_modes <= 0; MODES_VALID <= 0; modes_attempted <= 0;
+        end
+    end else case (state)
 		STATE_IDLE: begin
 			if (is_latched) begin // remote device wants to talk
 				enable <= 1'b1;
@@ -353,11 +378,11 @@ always_ff @(posedge CLK_50M) begin
 					state <= STATE_WRITE_START;
 					write_buffer <= {24'd0, LLAPI_GET_MODES};
 				end
-			end else if (poll_due) begin // Trigger timed device poll. Offset can not be > half the poll time.
+			end else if (poll_due && !auxiliary) begin // Let an accepted auxiliary transaction finish or time out.
 				count <= count + 1'b1;
 				if (count > TIME_WAIT) begin
 					if (stage != READ_IDLE) begin // IO timeout, device disconnect/defunct
-						enable <= 1'b0; LINK_FAULT <= 1; FAULT_REASON <= 2'd1;
+						enable <= 1'b0; LINK_FAULT <= 1; LAST_FAULT_REASON <= 2'd1;
 						poll_offset <= 0;
 						poll_time <= poll_offset_latch > TIME_BUFFER ? poll_offset_latch : TIME_POLL;
 						poll_offset_latch <= 21'd350000;
@@ -434,7 +459,7 @@ always_ff @(posedge CLK_50M) begin
                 cycle <= 0; count <= 0;
                 packet_complete <= 0;
                 latch <= 0; data_out <= 1;
-                enable <= 0; LINK_FAULT <= 1; FAULT_REASON <= 2'd1;
+                enable <= 0; LINK_FAULT <= 1; LAST_FAULT_REASON <= 2'd1;
                 lljs_type <= 0; lljs_modes <= 0; lljs_buttons <= 0;
                 modes_attempted <= 0; MODES_VALID <= 0;
                 lljs_analog <= 72'h080000808080808080;
@@ -521,9 +546,12 @@ always_ff @(posedge CLK_50M) begin
 		STATE_READ_END: begin
 			// latch data to correct registers based on stage
 			if (cycle >= TIME_WAIT) begin // bliss box holds the line low for about 3us after reply
+                packet_complete <= 0;
+                stage <= READ_IDLE;
                 // Publish type, buttons and all axes together after a complete packet.
                 if (stage == READ_STATUS && packet_complete && pending_type != 0 && !protocol_error(pending_type)) begin
                     STATUS_UPDATE <= 1;
+                    TYPE_CHANGED <= STATUS_VALID && pending_type != lljs_type;
                     command_slot <= 1;
                     lljs_type <= pending_type;
                     lljs_buttons <= pending_buttons;
@@ -534,15 +562,16 @@ always_ff @(posedge CLK_50M) begin
                         lljs_buttons[25] <= pending_buttons[25] | (pending_analog[7:0] < 50);
                         lljs_buttons[24] <= pending_buttons[24] | (pending_analog[7:0] > 200);
                     end
-                end
-                packet_complete <= 0;
-                stage <= READ_IDLE;
-                if (stage == READ_STATUS && packet_complete && pending_type != 0 && !protocol_error(pending_type) && AUTO_MODES && (!modes_attempted || pending_type != lljs_type)) begin
-                    stage <= WRITE_MODES; modes_attempted <= 1;
-                    lljs_modes <= 0; MODES_VALID <= 0; transaction_timer <= 0;
+                    // Both manual and automatic mode reads belong to this controller ID.
+                    if (pending_type != lljs_type || (AUTO_MODES && !modes_attempted)) begin
+                        lljs_modes <= 0; MODES_VALID <= 0;
+                        if (AUTO_MODES) begin
+                            stage <= WRITE_MODES; modes_attempted <= 1; transaction_timer <= 0;
+                        end
+                    end
                 end
                 if (stage == READ_STATUS && ((read_byte == 1 && protocol_error(read_buffer[0])) || (packet_complete && pending_type == 0))) begin
-                    LINK_FAULT <= 1; FAULT_REASON <= 2'd2; enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
+                    LINK_FAULT <= 1; LAST_FAULT_REASON <= 2'd2; enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
                     lljs_analog <= 72'h080000808080808080;
                     lljs_modes <= 0; MODES_VALID <= 0; modes_attempted <= 0;
                 end
@@ -570,23 +599,10 @@ always_ff @(posedge CLK_50M) begin
 			state <= STATE_IDLE;
 		end
     endcase
-    if (transaction_timer >= ((stage == READ_POLL) ? TIME_POLL : RECEIVE_START_TIMEOUT) && state != STATE_WAIT_RELEASE) begin
-        if (is_latched || !data_in) state <= STATE_WAIT_RELEASE; else state <= STATE_IDLE;
-        stage <= READ_IDLE; cycle <= 0; count <= 0; transaction_timer <= 0;
-        latch <= 0; data_out <= 1; packet_complete <= 0; payload_remaining <= 0;
-        LINK_FAULT <= 1;
-        FAULT_REASON <= (state == STATE_READ || state == STATE_READ_WAIT) ? 2'd3 : 2'd1;
-        if (command_busy) begin CMD_DONE <= 1; CMD_ERROR <= 8'he0; command_busy <= 0; end
-        if (!auxiliary || is_latched || !data_in) begin
-            enable <= 0; lljs_type <= 0; lljs_buttons <= 0;
-            lljs_analog <= 72'h080000808080808080;
-            lljs_modes <= 0; MODES_VALID <= 0; modes_attempted <= 0;
-        end
-    end
     end else begin
         // ENABLE low resets only this instance; reuse it for per-port rediscovery.
         // Intentional disable is not a communication fault.
-        STATUS_UPDATE <= 0; LINK_FAULT <= 0; FAULT_REASON <= 0;
+        STATUS_UPDATE <= 0; TYPE_CHANGED <= 0; LINK_FAULT <= 0; LAST_FAULT_REASON <= 0;
         // ENABLE low resets transaction/synchronization state deterministically.
         modes_attempted <= 0; MODES_VALID <= 0; command_busy <= 0; command_slot <= 0;
         payload_remaining <= 0; active_opcode <= 0; transaction_timer <= 0;
