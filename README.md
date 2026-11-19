@@ -2,9 +2,17 @@
 
 A compact, robust LLAPI driver for MiSTer, with coherent controller readings, bounded communication recovery and optional interfaces for pressure and rumble. The project supports integrations using two independent LLAPI ports and the official MiSTer Main.
 
+## What changed in the Enhanced cores?
+
+With v0.3.0-dev, a core can tell when one port reports a different controller type between two complete reads. In a two-player simulation, P1 switched from SNES to PSX DualShock while holding autofire. The core stopped P1’s autofire until the button was released and pressed again. P2 kept firing at the same rate and could press and release Jump throughout the swap. Each port also remembers its most recent communication fault after the connection recovers.
+
+The **Controller Guide** in [Contra Enhanced v0.8.0](https://github.com/MiSTer-LLAPI/jtcores/releases/tag/v0.8.0-contra-enhanced) shows player and button information for the selected LLAPI or SNAC interface. In its **Autofire** menu, each player can enable HOLD on a dedicated button and choose a speed. Both players start with autofire off. The core provides these menus and SNAC support. BlisSTer also has its own turbo shortcut: hold the desired button and tap START three times to toggle it. See the [Bliss-Box manual](https://bliss-box.com/pages/manual_gpa).
+
+The [Contra build](https://github.com/MiSTer-LLAPI/jtcores/actions/runs/44514130638) passed its controller simulations and all five timing checks. Hardware testing is under way on MiSTer and BlisSTer. The direct-swap result above is from simulation.
+
 ## Versions
 
-Current development source: **v0.2.1-dev**. Latest tagged release: [v0.1.0](https://github.com/MiSTer-LLAPI/BlisSTer-LLAPI-Enhanced/releases/tag/v0.1.0).
+Current development source: **v0.3.0-dev**. Latest tagged release: [v0.1.0](https://github.com/MiSTer-LLAPI/BlisSTer-LLAPI-Enhanced/releases/tag/v0.1.0).
 
 See [CHANGELOG.md](CHANGELOG.md) for changes and [VERSIONS.md](VERSIONS.md) for version history. Driver versions are independent of core release numbers. Each core release records its exact driver revision and file hash.
 
@@ -19,6 +27,20 @@ See [CHANGELOG.md](CHANGELOG.md) for changes and [VERSIONS.md](VERSIONS.md) for 
 - **Consistent startup:** disabling an instance resets its transaction, synchronization and controller state deterministically.
 
 FPGA resource usage must be measured in each core integration. Lower physical input latency has not been demonstrated. Pressure and rumble require integration and physical testing with the relevant controller and adapter.
+
+## v0.3.0-dev — controller changes and per-port fault history
+
+Each driver instance publishes `TYPE_CHANGED` for one 50 MHz clock alongside
+the new complete status report when a valid controller ID replaces a different
+valid ID. Initial detection, repeated IDs and reconnection after an observed
+loss do not trigger this event. Two controllers reporting the same ID cannot
+be distinguished by identity alone. Capture the event in the source clock domain
+before transferring it to a different clock.
+
+`LAST_FAULT_REASON[1:0]` retains the most recent reason listed below, including
+after successful communication resumes. Sampling `ENABLE=0` clears it to
+zero for that port. The existing `FAULT_REASON` still reads zero between fault
+events. Each port has independent history.
 
 ## v0.2.1-dev — compact fault classification
 
@@ -53,9 +75,14 @@ These signals run in the `CLK_50M` domain. Synchronize levels and capture pulses
 
 ## Validation
 
+The v0.3.0-dev suite includes direct type changes, per-port fault retention,
+cold boot with ENABLE held high, timeout arbitration, a prolonged bus stall,
+poll scheduling during auxiliary commands and manual mode invalidation. See
+[the v0.3.0 validation record](tests/v0.3.0-validation.json).
+
 For v0.2.1-dev, fault classification and cycle-equivalence tests are added to the existing regression. Results are recorded in `tests/v0.2.1-validation.json`; FPGA fitting and hardware remain pending.
 
-The complete driver regression passed **35 configurations**. Coverage includes complete and truncated status packets, interrupted payloads, mode queries, controller changes, same-type reconnection, receive timing variation and prolonged blocked-bus recovery.
+The earlier v0.1.0 regression passed **35 configurations**. Coverage includes complete and truncated status packets, interrupted payloads, mode queries, controller changes, same-type reconnection, receive timing variation and prolonged blocked-bus recovery.
 
 The 1943 development integration passed **12 integration fixtures**, plus a simulated two-port wire test. Its new FPGA build is tracked separately. Simulation does not establish hardware behavior or final FPGA fitting and timing.
 
@@ -79,9 +106,9 @@ Loss of communication is not proof of physical unplug: an adapter reset, wiring 
 
 For per-port rediscovery, hold that instance's `ENABLE` low for at least one `CLK_50M` edge, then re-enable normal polling. This resets the driver instance; it is not a physical reset command to the controller or adapter.
 
-The integrating core should neutralize invalid inputs and clear latched autofire, qualify sustained loss after a previously valid connection, preserve the other player's inputs and require explicit confirmation before resuming after a disconnect pause.
+The integrating core should neutralize invalid inputs, clear the affected player's autofire, qualify sustained loss after a previously valid connection and preserve the other player's inputs. The core decides when gameplay resumes.
 
-The proposed 1943 pause policy waits for **2000 consecutive millisecond loss ticks**. Brief recovery cancels the pending pause; reconnection after a pause does not resume automatically. The 1943 development integration has passed simulated loss, reconnection and explicit-resume tests. Its release and physical validation are tracked separately from the driver.
+In the Enhanced arcade integration, sustained loss on a previously active port pauses play. A three-second countdown starts once all previously active ports have a valid controller again. Losing a controller during the countdown cancels it.
 
 ## SNAC and USB integration
 

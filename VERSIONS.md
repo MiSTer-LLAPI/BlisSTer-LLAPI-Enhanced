@@ -138,3 +138,10 @@ The code describes the detected condition, not its physical cause. A truncated r
 
 Two additional RTL register bits; no new timers, counters, receive buffers, opcodes or polling changes. Unused outputs may be optimized away; actual FPGA usage remains a per-core Quartus measurement. Existing complete-packet publication, neutralization and redetection behavior are retained. No reduced-latency or P2 hardware-fix claim.
 
+## v0.3.0-dev (development source)
+
+Adds an optional direct controller-type-change event and a retained fault
+reason to each port. Cores can use the event to discard per-controller input
+state on a swap. Named-port users may omit both outputs. See the
+[signal definitions](README.md#v030-dev--controller-changes-and-per-port-fault-history).
+RTL SHA-256: `01a64fc4adf2d31b975ef9219c731ab0fd84ec59cc79cefe1b980541349ebe26`.

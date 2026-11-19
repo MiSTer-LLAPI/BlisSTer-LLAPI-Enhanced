@@ -1,5 +1,25 @@
 # BlisSTer LLAPI Enhanced changelog
 
+## v0.3.0-dev — controller changes and per-port fault history
+
+Each driver instance publishes `TYPE_CHANGED` for one 50 MHz clock alongside
+the new complete status report when a valid controller ID replaces a different
+valid ID. Initial detection, repeated IDs and reconnection after an observed
+loss do not trigger this event. Two controllers reporting the same ID cannot
+be distinguished by identity alone. Capture the event in the source clock domain
+before transferring it to a different clock.
+
+`LAST_FAULT_REASON[1:0]` retains the most recent reason listed below, including
+after successful communication resumes. Sampling `ENABLE=0` clears it to
+zero for that port. The existing `FAULT_REASON` still reads zero between fault
+events. Each port has independent history.
+
+The first clock after FPGA configuration initializes the port even when ENABLE
+is tied high. A scheduled poll waits for an outstanding auxiliary reply or its
+timeout. The transaction watchdog gives exactly one outcome at the deadline,
+and waiting for bus release does not start another timeout. A new controller ID
+invalidates cached modes even when automatic mode queries are disabled.
+
 ## v0.2.1-dev — compact fault classification
 
 Adds optional `FAULT_REASON[1:0]`, valid only during `LINK_FAULT`:
