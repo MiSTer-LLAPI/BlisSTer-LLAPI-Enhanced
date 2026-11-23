@@ -97,7 +97,8 @@ module LLAPI_Enhanced #(
     parameter bit COMMAND_INTERFACE = 0,
     parameter bit ALLOW_MODE_WRITES = 0,
     parameter bit RAW_COMMANDS = 0,
-    parameter bit IMMEDIATE_REPOLL = 0
+    parameter bit IMMEDIATE_REPOLL = 0,
+    parameter bit EXTENDED_POLL_ACK = 0
 )
 (
 	input         CLK_50M,
@@ -286,7 +287,9 @@ execution_state state = STATE_IDLE;
 wire auxiliary = command_busy || stage == READ_MODES;
 wire repoll_due = IMMEDIATE_REPOLL && repoll_pending && stage == READ_IDLE;
 wire transaction_active = state != STATE_WAIT_RELEASE && (stage != READ_IDLE || state != STATE_IDLE || repoll_due);
-wire watchdog_expired = transaction_active &&
+// Keep the standard deadline until ACK starts, then bound its hold separately.
+wire extended_ack_wait = EXTENDED_POLL_ACK && stage == READ_POLL && state == STATE_READ_START;
+wire watchdog_expired = transaction_active && !extended_ack_wait &&
     transaction_timer >= ((stage == READ_POLL || raw_active) ? TIME_POLL : RECEIVE_START_TIMEOUT);
 wire premature_reply = raw_active && state == STATE_IDLE && stage == WRITE_PAYLOAD && is_latched;
 wire poll_due = sync_counter >= ((enable && poll_time > TIME_BUFFER &&
@@ -479,7 +482,8 @@ always_ff @(posedge CLK_50M) begin
         end
 
         STATE_READ_START: begin
-            if (cycle >= ((stage == READ_POLL || raw_active) ? TIME_POLL : RECEIVE_START_TIMEOUT)) begin
+            if (cycle >= (extended_ack_wait ? 21'd2000000 :
+                          (stage == READ_POLL || raw_active) ? TIME_POLL : RECEIVE_START_TIMEOUT)) begin
                 // Discard this transaction and wait for both input lines to release.
                 // Never repeatedly transmit into a device holding the bus low.
                 state <= STATE_WAIT_RELEASE;

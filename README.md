@@ -2,6 +2,21 @@
 
 A compact, robust LLAPI driver for MiSTer, with coherent controller readings, bounded communication recovery and optional interfaces for pressure and rumble. The project supports integrations using two independent LLAPI ports and the official MiSTer Main.
 
+## Driver v1.0.0
+
+Set `EXTENDED_POLL_ACK=1` on the port connected to a Gamer-Pro adapter. The
+initial Poll ACK deadline remains 7 ms. Once ACK starts, the driver allows up
+to 40 ms at 50 MHz for the adapter to release it before sending Status. The
+standard path remains the default. The 1943 and 1944 Enhanced 2.0 integrations
+enable this option on P1 and enable Immediate Repoll on both ports.
+
+On MiSTer, the Gamer-Pro Advanced with the Bliss-Box Level Shifter was verified
+in 1943 LLAPI 2P on P1, including identification, movement, firing and button
+release. The first measured ACK stayed active for 26.212 ms. Hardware
+validation with the original Gamer-Pro and 4-Play Advanced is pending. The
+extended ACK handling is available for testing those adapters. Use the
+Bliss-Box Level Shifter for the external adapter on the MiSTer USER I/O port.
+
 ## Driver v0.5.0 — immediate polling under contention and recovery
 
 A pending auxiliary command can use its post-report slot even when the frame-based poll is due. If the data line stays low before the next poll, the transaction watchdog invalidates the stale report and waits for bus release. Simulations cover mode discovery followed by pressure and resumed polling, plus recovery from a blocked line through a fresh report.
@@ -44,7 +59,7 @@ The [Contra build](https://github.com/MiSTer-LLAPI/jtcores/actions/runs/44514130
 
 ## Versions
 
-Current driver source: **v0.5.0**.
+Current driver source: **v1.0.0**.
 
 See [CHANGELOG.md](CHANGELOG.md) for changes and [VERSIONS.md](VERSIONS.md) for version history. Driver versions are independent of core release numbers. Each core release records its exact driver revision and file hash.
 
