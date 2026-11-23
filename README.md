@@ -12,9 +12,9 @@ enable this option on P1 and enable Immediate Repoll on both ports.
 
 On MiSTer, the Gamer-Pro Advanced with the Bliss-Box Level Shifter was verified
 in 1943 LLAPI 2P on P1, including identification, movement, firing and button
-release. The first measured ACK stayed active for 26.212 ms. Hardware
-validation with the original Gamer-Pro and 4-Play Advanced is pending. The
-extended ACK handling is available for testing those adapters. Use the
+release. The first measured ACK stayed active for 26.212 ms. The original
+Gamer-Pro and 4-Play Advanced were also tested on MiSTer hardware. Their test
+results have yet to be documented. Use the
 Bliss-Box Level Shifter for the external adapter on the MiSTer USER I/O port.
 
 ## Driver v0.5.0 — immediate polling under contention and recovery
