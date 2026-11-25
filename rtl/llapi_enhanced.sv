@@ -19,6 +19,13 @@
 
 // Feb, 1 2019 - Initial Release
 
+// LLAPI Enhanced driver revision history (see CHANGELOG.md for details):
+// v0.4.0: IMMEDIATE_REPOLL optionally starts a new poll after report turnaround.
+// v0.5.0: Preserves the auxiliary command slot and recovers from a blocked bus.
+// v1.0.0: EXTENDED_POLL_ACK optionally gives adapters up to 40 ms at 50 MHz
+// to release an asserted Poll ACK before Status. The initial ACK deadline is
+// still 7 ms. Standard ACK handling remains the default.
+
 // ***** NOTE ******
 // On IO board 5.5 the bliss box requires external pull-up resistors to communicate properly
 
