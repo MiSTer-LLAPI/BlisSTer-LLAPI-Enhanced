@@ -1,5 +1,13 @@
 # BlisSTer LLAPI Enhanced changelog
 
+## Driver v1.2
+
+A core using the optional command interface can retry immediately after a descriptor is rejected with `E1`. The rejection sends no bytes and leaves the post-report command slot available. An accepted request consumes the slot. If the adapter starts replying before the driver has finished sending a payload, the driver reports `E2` for both typed and raw requests. Previously a typed request could appear to succeed despite an incomplete transmission.
+
+## Driver v1.1
+
+Receive-start qualification requires ten consecutive high DATA samples after lead-in. A low sample resets the count. This prevents isolated high pulses from accumulating across gaps while the driver waits for a reply. Poll scheduling, nominal bit timing and the extended ACK window retain their v1.0 settings. No reduction in input latency has been measured for this change.
+
 ## Driver v1.0.0
 
 Set `EXTENDED_POLL_ACK=1` on the port connected to a Gamer-Pro adapter. The

@@ -52,8 +52,8 @@ Raw requests reuse the normal serializer, wait for their turn between controller
 - `00`: transport completed. For write-only commands this means bytes sent, **not** proof of execution, motor movement or acknowledgement.
 - `F1`, `FE`, `FF`: documented adapter error replies on built-in commands. Raw commands return these bytes as data.
 - `E0`: bounded transaction timeout, including an incomplete reply.
-- `E1`: rejected descriptor, unsupported built-in opcode or disabled mode write. Nothing is sent.
-- `E2`: the adapter requested a reply transfer while outgoing raw parameter bytes were still pending. The request stops, the reply length is zero, and polling can resume after the lines are released.
+- `E1`: rejected descriptor, unsupported built-in opcode or disabled mode write. Nothing is sent. The command slot remains available for a corrected request.
+- `E2`: the adapter requested a reply transfer while outgoing typed or raw parameter bytes were still pending. The request stops, the reply length is zero, and polling can resume after the lines are released.
 
 ENABLE low resets/cancels an in-flight request without a DONE pulse; the integrating core must discard that request too. No command is automatically replayed after an interruption: this avoids repeating actuator commands or treating an orphan parameter as a new command. If the device lost synchronization during a multi-byte write, physical recovery may require resetting the adapter; this has not been validated.
 

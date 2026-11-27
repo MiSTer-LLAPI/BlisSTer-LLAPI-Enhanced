@@ -101,3 +101,16 @@ for mode in AUX BLOCKED; do
     iverilog -g2012 -s immediate_repoll_tb -P"immediate_repoll_tb.$mode=1" -o "$build/repoll" rtl/llapi_enhanced.sv tests/immediate_repoll_tb.sv
     vvp "$build/repoll"
 done
+
+for extended in 0 1; do
+    for noise in 0 1; do
+        iverilog -g2012 -s receive_start_tb -Preceive_start_tb.EXPECT_FIX=1 -Preceive_start_tb.EXTENDED_ACK="$extended" -Preceive_start_tb.CHECK_NOISE="$noise" -o "$build/start" rtl/llapi_enhanced.sv tests/receive_start_tb.sv
+        vvp -N "$build/start"
+    done
+done
+for command_case in 0 1 2 3; do
+    for early in 0 1; do
+        iverilog -g2012 -s commands_tb -Pcommands_tb.CASE="$command_case" -Pcommands_tb.EARLY="$early" -o "$build/commands" rtl/llapi_enhanced.sv tests/commands_tb.sv
+        vvp -N "$build/commands"
+    done
+done

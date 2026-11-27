@@ -2,6 +2,33 @@
 
 A compact, robust LLAPI driver for MiSTer, with coherent controller readings, bounded communication recovery and optional interfaces for pressure and rumble. The project supports integrations using two independent LLAPI ports and the official MiSTer Main.
 
+## How the driver evolved
+
+| Revision | What changed for a core or its player |
+|---|---|
+| Original LLAPI | Jamie Dickson (Kitrinx) implemented the serial protocol used to poll Bliss-Box hardware and read controller data. This implementation is the reference for the Enhanced driver. |
+| 0.1 alpha 1–2 | Deterministic reset and complete controller snapshots kept buttons and axes from different reports from being mixed. A receive-start timeout and bus-release check allowed recovery from stalled transfers. |
+| 0.1 alpha 3–4 | Added controller-mode discovery, optional pressure and rumble transactions, transport error handling and a correction to synchronization between received bytes. |
+| 0.1.0 | Reduced counter widths and redundant snapshot storage while preserving complete updates. Expanded fault, payload and timing tests. |
+| 0.2.0–0.2.1 | Added snapshot-valid, update and link-fault signals, then a two-bit fault reason so a core can distinguish a timeout from a rejected report. |
+| 0.3.0 | Added direct controller-type change detection and independent fault history per port. Improved cold start, command arbitration at a polling deadline and invalidation of stale controller modes. |
+| 0.3.1 | Added optional firmware extension commands with up to 24 parameter bytes and 13 reply bytes per request. |
+| 0.4.0 | Added optional immediate re-polling after a complete report. A simulated adapter checks the next opcode at the pins and the interval from report publication to transmission. |
+| 0.5.0 | Protected the post-report command slot and bounded the wait for a blocked data line. |
+| 1.0.0 | Added the optional extended Poll ACK release window for Gamer-Pro adapters. |
+| 1.1 | Required a continuous high DATA interval before starting receive. |
+| 1.2 | Preserved the command slot on E1 rejection and detected premature replies during typed and raw payload writes. |
+
+## Driver v1.2
+
+A core using the optional command interface can retry immediately after a descriptor is rejected with `E1`. The rejection sends no bytes and leaves the post-report command slot available. An accepted request consumes the slot. If the adapter starts replying before the driver has finished sending a payload, the driver reports `E2` for both typed and raw requests. Previously a typed request could appear to succeed despite an incomplete transmission.
+
+The 1944 and NeoGeo Turbo integrations were exercised on MiSTer. The auxiliary-command error cases are covered separately by simulation. [1944 build](https://github.com/MiSTer-LLAPI/jtcores/actions/runs/45633841924) · [NeoGeo Turbo build](https://github.com/MiSTer-LLAPI/NeoGeo_MiSTer/actions/runs/45633840392)
+
+## Driver v1.1
+
+Receive-start qualification requires ten consecutive high DATA samples after lead-in. A low sample resets the count. This prevents isolated high pulses from accumulating across gaps while the driver waits for a reply. Poll scheduling, nominal bit timing and the extended ACK window retain their v1.0 settings. No reduction in input latency has been measured for this change.
+
 ## Driver v1.0.0
 
 Set `EXTENDED_POLL_ACK=1` on the port connected to a Gamer-Pro adapter. The
@@ -27,20 +54,6 @@ A pending auxiliary command can use its post-report slot even when the frame-bas
 
 A core can enable `IMMEDIATE_REPOLL=1` independently on each port. After publishing a complete controller report from Get Data (`0x01`), the driver starts the next Poll (`0x00`) as soon as the bus turnaround permits. The adapter can then sample the controller while the core uses the last complete report. Automatic mode discovery and accepted commands retain access to the bus. The default value of zero preserves frame-based scheduling for existing cores and provides a reference for comparison.
 
-### How the driver evolved
-
-| Revision | What changed for a core or its player |
-|---|---|
-| Original LLAPI | Jamie Dickson (Kitrinx) implemented the serial protocol used to poll Bliss-Box hardware and read controller data. This implementation is the reference for the Enhanced driver. |
-| 0.1 alpha 1–2 | Deterministic reset and complete controller snapshots kept buttons and axes from different reports from being mixed. A receive-start timeout and bus-release check allowed recovery from stalled transfers. |
-| 0.1 alpha 3–4 | Added controller-mode discovery, optional pressure and rumble transactions, transport error handling and a correction to synchronization between received bytes. |
-| 0.1.0 | Reduced counter widths and redundant snapshot storage while preserving complete updates. Expanded fault, payload and timing tests. |
-| 0.2.0–0.2.1 | Added snapshot-valid, update and link-fault signals, then a two-bit fault reason so a core can distinguish a timeout from a rejected report. |
-| 0.3.0 | Added direct controller-type change detection and independent fault history per port. Improved cold start, command arbitration at a polling deadline and invalidation of stale controller modes. |
-| 0.3.1 | Added optional firmware extension commands with up to 24 parameter bytes and 13 reply bytes per request. |
-| 0.4.0 | Added optional immediate re-polling after a complete report. A simulated adapter checks the next opcode at the pins and the interval from report publication to transmission. |
-| 0.5.0 | Protected the post-report command slot and bounded the wait for a blocked data line. |
-
 ### Hardware reference for the scheduling change
 
 On a MiSTer running the Contra P1 timing diagnostic with the previous scheduler, three SNES reports were followed by a new poll after 15.734–15.738 ms. Three PSX DualShock reports were followed by a new poll after 10 µs. The polling operation itself took 575–577 µs on SNES and 3.920–3.921 ms on DualShock. These measurements describe the driver and adapter. The planned 1944 comparison will measure the new scheduler on hardware. Button-to-screen latency remains unmeasured.
@@ -59,7 +72,7 @@ The [Contra build](https://github.com/MiSTer-LLAPI/jtcores/actions/runs/44514130
 
 ## Versions
 
-Current driver source: **v1.0.0**.
+Current driver source: **v1.2**.
 
 See [CHANGELOG.md](CHANGELOG.md) for changes and [VERSIONS.md](VERSIONS.md) for version history. Driver versions are independent of core release numbers. Each core release records its exact driver revision and file hash.
 
